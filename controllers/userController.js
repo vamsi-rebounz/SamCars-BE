@@ -8,7 +8,7 @@ const UserController = {
      * @param {object} res - Express response object.
      */
     async registerUser(req, res) {
-        const { first_name, last_name, email, password } = req.body;
+        const { first_name, last_name, email, password, role } = req.body;
 
         // Basic input validation
         if (!first_name || !last_name || !email || !password) {
@@ -41,7 +41,8 @@ const UserController = {
                 first_name,
                 last_name,
                 email,
-                password // Pass plain password, model will hash it
+                password, // Pass plain password, model will hash it
+                role // Add role parameter
             });
 
             // The newUser object returned from the model will contain actual database columns
