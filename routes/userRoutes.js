@@ -4,18 +4,12 @@ const UserController = require('../controllers/userController');
 
 const router = express.Router();
 
-// GET all users
-router.get('/', (req, res) => {
-    res.json({ message: 'Get all users endpoint' });
-});
-
-// POST create new user
-router.post('/', (req, res) => {
-    res.json({ message: 'Create new user endpoint', data: req.body });
-});
-
-// POST route for user registration
+// POST route for user registration/signup
 // Endpoint: /users/register
 router.post('/register', UserController.registerUser);
+
+//GET route for fetch user by id
+// Endpoint: /users/fetch-by-id
+router.get('/fetch-by-id', UserController.fetchUserById);
 
 module.exports = router;

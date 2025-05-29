@@ -94,6 +94,43 @@ const UserModel = {
             // Re-throw generic server error for controller
             throw new Error('Could not create user due to a server error.');
         }
+    },
+
+    /**
+     * Fetches a user by their ID from the database.
+     * @param {string|number} userId - The ID of the user to fetch.
+     * @returns {Promise<object|null>} The user object (excluding password_hash) or null if not found.
+     */
+    async getUserById(userId) {
+        try {
+            const query = `
+                SELECT 
+                    user_id,
+                    first_name,
+                    last_name,
+                    email,
+                    role,
+                    email_verified,
+                    phone,
+                    driver_license,
+                    date_of_birth,
+                    created_at,
+                    updated_at,
+                    last_login
+                FROM users 
+                WHERE user_id = $1`;
+            
+            const result = await pool.query(query, [userId]);
+            
+            if (result.rows.length === 0) {
+                return null;
+            }
+            
+            return result.rows[0];
+        } catch (error) {
+            console.error('Error in getUserById:', error);
+            throw new Error('Could not fetch user details.');
+        }
     }
 };
 
