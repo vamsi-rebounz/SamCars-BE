@@ -83,8 +83,48 @@ const UserController = {
                 message: 'An unexpected server error occurred during user registration.'
             });
         }
+    },
+    
+    /**
+     * Handler for fetching a user by their ID.
+     * @param {*} req - Express request object
+     * @param {*} res - Express response object
+     */
+    async fetchUserById(req, res) {
+        const { id } = req.query;
+
+        if (!id) {
+            return res.status(400).json({
+                success: false,
+                error_code: 'MISSING_ID',
+                message: 'User ID is required'
+            });
+        }
+
+        try {
+            const user = await UserModel.getUserById(id);
+            
+            if (!user) {
+                return res.status(404).json({
+                    success: false,
+                    error_code: 'USER_NOT_FOUND',
+                    message: 'User not found'
+                });
+            }
+
+            res.json({
+                success: true,
+                user
+            });
+        } catch (error) {
+            console.error('Error in fetchUserById controller:', error);
+            res.status(500).json({
+                success: false,
+                error_code: 'SERVER_ERROR',
+                message: 'Could not fetch user details'
+            });
+        }
     }
-    // You can add more controller methods here (e.g., loginUser, getUserById)
 };
 
 module.exports = UserController;
