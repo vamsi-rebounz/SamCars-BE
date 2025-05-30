@@ -1,6 +1,8 @@
 require('dotenv').config();
 const express = require('express');
 const userRoutes = require('./routes/userRoutes');
+const vehicleRoutes = require('./routes/vehicleRoutes');
+
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -11,6 +13,7 @@ app.use(express.urlencoded({ extended: true }));
 
 // Mount user routes
 app.use('/users', userRoutes);
+app.use('/inventory', vehicleRoutes);
 
 // Health check route
 app.get('/health', (req, res) => {
