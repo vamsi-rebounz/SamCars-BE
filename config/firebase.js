@@ -7,11 +7,11 @@ const firebaseConfig = {
     apiKey: "AIzaSyA98WeYnS0nLdM9mgkufrQoVtr-2NBm1bY",
     authDomain: "samcars-11f0f.firebaseapp.com",
     projectId: "samcars-11f0f",
-    storageBucket: "samcars-11f0f.appspot.com",
+    storageBucket: "samcars-11f0f.firebasestorage.app",
     messagingSenderId: "74320712003",
-    appId: "1:74320712003:web:4249dce1a1bcdd78afdff6",
-    measurementId: "G-PYFZH8DET5"
-};
+    appId: "1:74320712003:web:7afa06b72a59dcfdafdff6",
+    measurementId: "G-L8HE50JVL4"
+  };
 
 // Initialize Firebase
 const firebaseApp = initializeApp(firebaseConfig);
