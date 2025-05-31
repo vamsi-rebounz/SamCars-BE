@@ -1,13 +1,13 @@
 require('dotenv').config();
 const express = require('express');
+const formidable = require('express-formidable');
 const userRoutes = require('./routes/userRoutes');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Middleware to parse JSON request bodies
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+// Middleware to parse form-data
+app.use(formidable());
 
 // Mount user routes
 app.use('/users', userRoutes);
