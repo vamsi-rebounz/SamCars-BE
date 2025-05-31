@@ -1,0 +1,9 @@
+curl -X POST http://localhost:3000/services/create-new \
+  -H "Content-Type: multipart/form-data" \
+  -F "image=@/path/to/your/image.jpg" \
+  -F "name=Oil Change Service" \
+  -F "description=Complete oil change service with filter replacement" \
+  -F "category=maintenance" \
+  -F "price=49.99" \
+  -F "duration_minutes=30" \
+  -F "warranty_months=3" 
