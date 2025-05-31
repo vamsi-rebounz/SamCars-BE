@@ -46,28 +46,48 @@ const UserController = {
     },
 
     async loginUser(req, res) {
+        console.log('Login attempt received:', { email: req.body.email });
         const { email, password } = req.body;
-
+    
         if (!email || !password) {
             return res.status(400).json({ message: 'Email and password are required.' });
         }
-
+    
         try {
+            console.log('Attempting to fetch user...');
             const user = await UserModel.getUserByEmail(email);
+            console.log('User fetch result:', { found: !!user, userId: user?.user_id });
+            
             if (!user) {
                 return res.status(401).json({ message: 'Invalid email or password.' });
             }
-
+    
+            console.log('Comparing password...');
             const passwordMatch = await bcrypt.compare(password, user.password_hash);
+            console.log('Password match result:', passwordMatch);
+            
             if (!passwordMatch) {
                 return res.status(401).json({ message: 'Invalid email or password.' });
             }
-
-            const accessToken = jwt.sign({ userId: user.user_id, role: user.role }, process.env.JWT_SECRET, { expiresIn: process.env.JWT_EXPIRES_IN || '1d' });
-            const refreshToken = jwt.sign({ userId: user.user_id }, process.env.JWT_REFRESH_SECRET, { expiresIn: '7d' });
-
-            res.status(200).json({
-                message: 'Login successful',
+    
+            const payload = {
+                user_id: user.user_id,
+                email: user.email,
+                role: user.role
+            };
+    
+            console.log('Generating tokens with payload:', payload);
+            const accessToken = jwt.sign(payload, process.env.JWT_SECRET, {
+                expiresIn: process.env.JWT_EXPIRES_IN || '15m'
+            });
+    
+            const refreshToken = jwt.sign(payload, process.env.JWT_REFRESH_SECRET, {
+                expiresIn: process.env.JWT_REFRESH_EXPIRES_IN || '7d'
+            });
+    
+            return res.status(200).json({
+                success: true,
+                message: "Login successful",
                 accessToken,
                 refreshToken,
                 user: {
@@ -78,12 +98,16 @@ const UserController = {
                     last_name: user.last_name
                 }
             });
+    
         } catch (error) {
-            console.error('Login error:', error);
-            res.status(500).json({ message: 'Server error during login.' });
+            console.error("Login error details:", {
+                message: error.message,
+                stack: error.stack,
+                name: error.name
+            });
+            res.status(500).json({ message: 'Internal server error' });
         }
     },
-
     async fetchUserById(req, res) {
         const { id } = req.query;
 
