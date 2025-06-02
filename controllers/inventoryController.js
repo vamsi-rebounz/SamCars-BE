@@ -1,0 +1,192 @@
+const pool = require('../config/db');
+const { validateVehicleData } = require('../validators/vehicleValidator');
+const { uploadToFirebase } = require('../utils/firebaseUploader');
+
+class InventoryController {
+    /**
+     * Add a new vehicle to the inventory
+     * @param {object} req - Express request object
+     * @param {object} res - Express response object
+     */
+    static async addVehicle(req, res) {
+        try {
+            // Parse form data
+            const vehicleData = {
+                make: req.body.make,
+                model: req.body.model,
+                year: parseInt(req.body.year),
+                price: parseFloat(req.body.price),
+                mileage: req.body.mileage ? parseInt(req.body.mileage) : null,
+                vin: req.body.vin,
+                exterior_color: req.body.exterior_color,
+                interior_color: req.body.interior_color,
+                transmission: req.body.transmission,
+                body_type: req.body.body_type,
+                description: req.body.description,
+                tags: req.body.tags ? JSON.parse(req.body.tags) : []
+            };
+
+            // Validate request data
+            const validationError = validateVehicleData(vehicleData);
+            if (validationError) {
+                return res.status(400).json({ error: validationError });
+            }
+
+            const {
+                make,
+                model,
+                year,
+                price,
+                mileage,
+                vin,
+                exterior_color,
+                interior_color,
+                transmission,
+                body_type,
+                description,
+                tags
+            } = vehicleData;
+
+            const client = await pool.connect();
+
+            try {
+                await client.query('BEGIN');
+
+                // 1. First check if make exists, if not create it
+                let makeResult = await client.query(
+                    'SELECT make_id FROM VEHICLE_MAKES WHERE name = $1',
+                    [make]
+                );
+
+                let make_id;
+                if (makeResult.rows.length === 0) {
+                    const newMake = await client.query(
+                        'INSERT INTO VEHICLE_MAKES (name) VALUES ($1) RETURNING make_id',
+                        [make]
+                    );
+                    make_id = newMake.rows[0].make_id;
+                } else {
+                    make_id = makeResult.rows[0].make_id;
+                }
+
+                // 2. Check if model exists for this make, if not create it
+                let modelResult = await client.query(
+                    'SELECT model_id FROM VEHICLE_MODELS WHERE make_id = $1 AND name = $2',
+                    [make_id, model]
+                );
+
+                let model_id;
+                if (modelResult.rows.length === 0) {
+                    const newModel = await client.query(
+                        'INSERT INTO VEHICLE_MODELS (make_id, name) VALUES ($1, $2) RETURNING model_id',
+                        [make_id, model]
+                    );
+                    model_id = newModel.rows[0].model_id;
+                } else {
+                    model_id = modelResult.rows[0].model_id;
+                }
+
+                // 3. Insert the vehicle
+                const vehicleResult = await client.query(
+                    `INSERT INTO VEHICLES (
+                        make_id, model_id, year, price, mileage, vin,
+                        exterior_color, interior_color, transmission,
+                        body_type, description, status
+                    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'available')
+                    RETURNING vehicle_id`,
+                    [
+                        make_id, model_id, year, price, mileage, vin,
+                        exterior_color, interior_color, transmission,
+                        body_type, description
+                    ]
+                );
+
+                const vehicle_id = vehicleResult.rows[0].vehicle_id;
+
+                // 4. Handle tags if provided
+                if (tags && tags.length > 0) {
+                    for (const tag of tags) {
+                        // Check if tag exists or create it
+                        let tagResult = await client.query(
+                            'SELECT tag_id FROM VEHICLE_TAGS WHERE name = $1',
+                            [tag]
+                        );
+
+                        let tag_id;
+                        if (tagResult.rows.length === 0) {
+                            const newTag = await client.query(
+                                'INSERT INTO VEHICLE_TAGS (name) VALUES ($1) RETURNING tag_id',
+                                [tag]
+                            );
+                            tag_id = newTag.rows[0].tag_id;
+                        } else {
+                            tag_id = tagResult.rows[0].tag_id;
+                        }
+
+                        // Create tag mapping
+                        await client.query(
+                            'INSERT INTO VEHICLE_TAG_MAPPING (vehicle_id, tag_id) VALUES ($1, $2)',
+                            [vehicle_id, tag_id]
+                        );
+                    }
+                }
+
+                // 5. Handle image uploads if provided
+                if (req.files && req.files.length > 0) {
+                    // Upload all images to Firebase concurrently
+                    const uploadPromises = req.files.map(file => 
+                        uploadToFirebase(file.buffer, file.originalname, file.mimetype)
+                    );
+                    const imageUrls = await Promise.all(uploadPromises);
+
+                    // Create metadata for each image
+                    const imageMetadata = req.files.map((file, index) => ({
+                        originalName: file.originalname,
+                        mimeType: file.mimetype,
+                        size: file.size,
+                        uploadedAt: new Date().toISOString(),
+                        url: imageUrls[index]
+                    }));
+
+                    // Insert into vehicle_images with array of URLs and metadata
+                    await client.query(
+                        `INSERT INTO vehicle_images (
+                            vehicle_id, 
+                            image_urls, 
+                            image_metadata, 
+                            primary_image_index
+                        ) VALUES ($1, $2, $3, $4)`,
+                        [
+                            vehicle_id,
+                            imageUrls,
+                            JSON.stringify(imageMetadata),
+                            0 // First image is primary by default
+                        ]
+                    );
+                }
+
+                await client.query('COMMIT');
+
+                res.status(201).json({
+                    message: 'Vehicle added successfully',
+                    vehicle_id: vehicle_id
+                });
+
+            } catch (error) {
+                await client.query('ROLLBACK');
+                throw error;
+            } finally {
+                client.release();
+            }
+
+        } catch (error) {
+            console.error('Error adding vehicle:', error);
+            res.status(500).json({
+                error: 'Failed to add vehicle',
+                details: error.message
+            });
+        }
+    }
+}
+
+module.exports = InventoryController; 
