@@ -3,7 +3,17 @@ const express = require('express');
 const formidable = require('express-formidable');
 const userRoutes = require('./routes/userRoutes');
 
+const cors = require('cors');
 const app = express();
+app.use(cors({
+  origin: [
+    "http://localhost:5173",
+    "http://localhost:5174",
+    "http://localhost:5175"
+  ],
+  credentials: true
+}));
+
 const PORT = process.env.PORT || 3000;
 
 // Middleware to parse form-data
