@@ -1,7 +1,7 @@
 // routes/userRoutes.js
 const express = require('express');
 const UserController = require('../controllers/userController');
-const { authenticateToken, authorizeRoles } = require('../middleware/authMiddleware');
+const { authenticateToken, authorizeRoles, isAdmin } = require('../middleware/authMiddleware');
 
 const router = express.Router();
 
@@ -12,7 +12,7 @@ router.post('/password-reset', UserController.requestPasswordReset);
 
 // Protected Route Examples
 router.get('/fetch-by-id', authenticateToken, UserController.fetchUserById);
-router.get('/adminDashboard', authenticateToken, authorizeRoles('admin'), (req, res) => {
+router.get('/adminDashboard', authenticateToken, isAdmin, (req, res) => {
     res.json({ message: 'Welcome, Admin!' });
 });
 

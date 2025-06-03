@@ -51,12 +51,18 @@ CREATE TABLE VEHICLE_FEATURE_MAPPING (
 );
 
 CREATE TABLE VEHICLE_IMAGES (
-    image_id SERIAL PRIMARY KEY,
-    vehicle_id INTEGER NOT NULL REFERENCES VEHICLES(vehicle_id) ON DELETE CASCADE,
-    image_url TEXT NOT NULL,
-    is_primary BOOLEAN NOT NULL DEFAULT FALSE,
-    display_order INTEGER NOT NULL DEFAULT 0,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+    vehicle_id INTEGER NOT NULL,
+    image_urls text[] COLLATE pg_catalog."default" NOT NULL,
+    image_metadata jsonb,
+    primary_image_index integer NOT NULL DEFAULT 0,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT vehicle_images_pkey PRIMARY KEY (vehicle_id),
+    CONSTRAINT vehicle_images_vehicle_id_fkey FOREIGN KEY (vehicle_id)
+        REFERENCES public.vehicles (vehicle_id) MATCH SIMPLE
+        ON UPDATE NO ACTION
+        ON DELETE CASCADE,
+    CONSTRAINT vehicle_images_primary_image_index_check CHECK (primary_image_index >= 0)
 );
 
 CREATE TABLE VEHICLE_TAGS (

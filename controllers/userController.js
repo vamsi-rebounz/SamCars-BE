@@ -8,7 +8,7 @@ require('dotenv').config();
 
 const UserController = {
     async registerUser(req, res) {
-        // Changed from req.body to req.fields to handle form-data
+        // Using req.fields to handle form-data
         const first_name = req.fields.first_name;
         const last_name = req.fields.last_name;
         const email = req.fields.email;
@@ -51,8 +51,8 @@ const UserController = {
     },
 
     async loginUser(req, res) {
-        console.log('Login attempt received:', { email: req.body.email });
-        const { email, password } = req.body;
+        console.log('Login attempt received:', { email: req.fields.email });
+        const { email, password } = req.fields;
     
         if (!email || !password) {
             return res.status(400).json({ message: 'Email and password are required.' });

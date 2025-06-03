@@ -1,10 +1,29 @@
 require('dotenv').config();
+
+// Importing dependencies
 const express = require('express');
 const formidable = require('express-formidable');
-const userRoutes = require('./routes/userRoutes');
-
 const cors = require('cors');
+
+// Importing routes
+const userRoutes = require('./routes/userRoutes');
+const inventoryRoutes = require('./routes/inventoryRoutes');
+const vehicleRoutes = require('./routes/vehicleRoutes');
+
+// Initializing express app and port
 const app = express();
+const PORT = process.env.PORT || 3000;
+
+// Middleware to parse JSON request bodies
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
+// Mount user routes
+app.use('/users', formidable(), userRoutes);
+app.use('/inventory', inventoryRoutes);
+app.use('/vehicles', vehicleRoutes);
+
+// CORS middleware
 app.use(cors({
   origin: [
     "http://localhost:5173",
@@ -14,13 +33,8 @@ app.use(cors({
   credentials: true
 }));
 
-const PORT = process.env.PORT || 3000;
-
 // Middleware to parse form-data
 app.use(formidable());
-
-// Mount user routes
-app.use('/users', userRoutes);
 
 // Health check route
 app.get('/health', (req, res) => {
