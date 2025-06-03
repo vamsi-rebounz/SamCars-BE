@@ -25,8 +25,11 @@ class InventoryController {
                 transmission: req.body.transmission,
                 body_type: req.body.body_type,
                 description: req.body.description,
-                tags: req.body.tags ? JSON.parse(req.body.tags) : []
+                tags: req.body.tags ? (typeof req.body.tags === 'string' ? JSON.parse(req.body.tags) : req.body.tags) : []
             };
+
+            console.log('Received vehicle data:', vehicleData);
+            console.log('Received files:', req.files);
 
             // Validate request data
             const validationError = validateVehicleData(vehicleData);

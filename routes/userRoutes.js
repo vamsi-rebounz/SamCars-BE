@@ -1,15 +1,19 @@
 // routes/userRoutes.js
 const express = require('express');
 const UserController = require('../controllers/userController');
+const { authenticateToken, authorizeRoles, isAdmin } = require('../middleware/authMiddleware');
 
 const router = express.Router();
 
-// POST route for user registration/signup
-// Endpoint: /users/register
+// Public Routes
 router.post('/register', UserController.registerUser);
+router.post('/login', UserController.loginUser);
+router.post('/password-reset', UserController.requestPasswordReset);
 
-//GET route for fetch user by id
-// Endpoint: /users/fetch-by-id
-router.get('/fetch-by-id', UserController.fetchUserById);
+// Protected Route Examples
+router.get('/fetch-by-id', authenticateToken, UserController.fetchUserById);
+router.get('/adminDashboard', authenticateToken, isAdmin, (req, res) => {
+    res.json({ message: 'Welcome, Admin!' });
+});
 
 module.exports = router;

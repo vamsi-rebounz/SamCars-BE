@@ -2,27 +2,57 @@ const express = require('express');
 const router = express.Router();
 const multer = require('multer');
 const InventoryController = require('../controllers/inventoryController');
-// const { authenticateToken, isAdmin } = require('../middleware/authMiddleware');
+const { authenticateToken, isAdmin } = require('../middleware/authMiddleware');
 
 // Configure multer for memory storage
 const storage = multer.memoryStorage();
 
 // Configure multer upload settings
+const path = require('path');
+
 const upload = multer({
     storage: storage,
     limits: {
-        fileSize: 5 * 1024 * 1024, // 5MB limit per file
-        files: 10 // Maximum 10 files
+        fileSize: 5 * 1024 * 1024,
+        files: 10
     },
     fileFilter: (req, file, cb) => {
-        // Accept only image files
-        if (!file.originalname.match(/\.(jpg|jpeg|png|gif|webp)$/i)) {
-            return cb(new Error('Only image files are allowed!'), false);
+        try {
+            // Get file extension
+            const ext = path.extname(file.originalname).toLowerCase();
+            const allowedExts = ['.jpg', '.jpeg', '.png', '.gif', '.webp'];
+            
+            // Check extension
+            if (!allowedExts.includes(ext)) {
+                console.log('Invalid extension:', file.originalname);
+                return cb(new Error('Invalid file extension. Only jpg, jpeg, png, gif, webp allowed.'), false);
+            }
+            
+            // Check MIME type
+            const allowedMimes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
+            if (!allowedMimes.includes(file.mimetype)) {
+                console.log('Invalid MIME:', file.mimetype);
+                return cb(new Error('Invalid file type. Only images allowed.'), false);
+            }
+            
+            // Additional validation: Check if extension matches MIME
+            const extToMime = {
+                '.jpg': 'image/jpeg',
+                '.jpeg': 'image/jpeg',
+                '.png': 'image/png',
+                '.gif': 'image/gif',
+                '.webp': 'image/webp'
+            };
+            
+            if (extToMime[ext] !== file.mimetype) {
+                console.log(`MIME mismatch: ${ext} expects ${extToMime[ext]} got ${file.mimetype}`);
+                return cb(new Error('File extension does not match content type.'), false);
+            }
+            
+            cb(null, true);
+        } catch (err) {
+            cb(err);
         }
-        if (!file.mimetype.startsWith('image/')) {
-            return cb(new Error('Only image files are allowed!'), false);
-        }
-        cb(null, true);
     }
 });
 
@@ -59,8 +89,6 @@ const handleMulterError = (err, req, res, next) => {
 // Add vehicle
 router.post(
     '/add-vehicle',
-    // authenticateToken,
-    // isAdmin,
     upload.array('images', 10),
     handleMulterError,
     InventoryController.addVehicle
@@ -69,8 +97,6 @@ router.post(
 // Update vehicle
 router.put(
     '/vehicles/update',
-    // authenticateToken,
-    // isAdmin,
     upload.array('images', 10),
     handleMulterError,
     InventoryController.updateVehicle
