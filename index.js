@@ -1,5 +1,6 @@
 require('dotenv').config();
 const express = require('express');
+const formidable = require('express-formidable');
 const userRoutes = require('./routes/userRoutes');
 
 const cors = require('cors');
@@ -15,9 +16,8 @@ app.use(cors({
 
 const PORT = process.env.PORT || 3000;
 
-// Middleware to parse JSON request bodies
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+// Middleware to parse form-data
+app.use(formidable());
 
 // Mount user routes
 app.use('/users', userRoutes);
@@ -41,4 +41,4 @@ app.use((err, req, res, next) => {
 // Start the server
 app.listen(PORT, () => {
     console.log(`Server is running on port ${PORT}`);
-}); 
+});

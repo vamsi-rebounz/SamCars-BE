@@ -8,7 +8,12 @@ require('dotenv').config();
 
 const UserController = {
     async registerUser(req, res) {
-        const { first_name, last_name, email, password, role } = req.body;
+        // Changed from req.body to req.fields to handle form-data
+        const first_name = req.fields.first_name;
+        const last_name = req.fields.last_name;
+        const email = req.fields.email;
+        const password = req.fields.password;
+        const role = req.fields.role;
 
         if (!first_name || !last_name || !email || !password) {
             return res.status(400).json({ success: false, message: 'All fields (first_name, last_name, email, password) are required.' });
