@@ -11,7 +11,6 @@ class VehicleController {
     static async getVehicleById(req, res) {
         try {
             const { id } = req.query;
-
             const client = await pool.connect();
 
             try {
@@ -62,19 +61,29 @@ class VehicleController {
 
                 // Get vehicle features
                 const featuresQuery = `
-                    SELECT vf.name
+                    SELECT array_agg(vf.name) as features
                     FROM vehicle_features vf
                     JOIN vehicle_feature_mapping vfm ON vf.feature_id = vfm.feature_id
                     WHERE vfm.vehicle_id = $1
                 `;
 
                 const featuresResult = await client.query(featuresQuery, [id]);
-                const features = featuresResult.rows.map(row => row.name);
+                
+                // Get vehicle tags
+                const tagsQuery = `
+                    SELECT array_agg(vt.name) as tags
+                    FROM vehicle_tags vt
+                    JOIN vehicle_tag_mapping vtm ON vt.tag_id = vtm.tag_id
+                    WHERE vtm.vehicle_id = $1
+                `;
+
+                const tagsResult = await client.query(tagsQuery, [id]);
 
                 // Combine all data
                 const vehicleData = {
                     ...vehicleResult.rows[0],
-                    features,
+                    features: featuresResult.rows[0].features || [],
+                    tags: tagsResult.rows[0].tags || [],
                     images: vehicleResult.rows[0].images || []
                 };
 

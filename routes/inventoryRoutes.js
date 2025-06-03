@@ -55,7 +55,8 @@ const handleMulterError = (err, req, res, next) => {
     next();
 };
 
-// Inventory routes
+// Inventory routes starts here
+// Add vehicle
 router.post(
     '/add-vehicle',
     // authenticateToken,
@@ -63,6 +64,16 @@ router.post(
     upload.array('images', 10),
     handleMulterError,
     InventoryController.addVehicle
+);
+
+// Update vehicle
+router.put(
+    '/vehicles/update',
+    // authenticateToken,
+    // isAdmin,
+    upload.array('images', 10),
+    handleMulterError,
+    InventoryController.updateVehicle
 );
 
 module.exports = router; 
