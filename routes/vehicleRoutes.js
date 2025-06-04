@@ -5,5 +5,10 @@ const { authenticateToken, authorizeRoles } = require('../middleware/authMiddlew
 
 // Get vehicle by ID
 router.get('/fetch-by-id', authenticateToken, VehicleController.getVehicleById);
+// Delete vehicle by ID
+router.delete('/vehicles/delete/:vehicle_id', VehicleController.deleteVehicle);
+
+
+
 
 module.exports = router;
