@@ -10,6 +10,8 @@ const userRoutes = require('./routes/userRoutes');
 const inventoryRoutes = require('./routes/inventoryRoutes');
 const vehicleRoutes = require('./routes/vehicleRoutes');
 
+
+
 // Initializing express app and port
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -21,6 +23,7 @@ app.use(express.urlencoded({ extended: true }));
 // Mount user routes
 app.use('/users', formidable(), userRoutes);
 app.use('/inventory', inventoryRoutes);
+app.use('/inventory', vehicleRoutes);
 app.use('/vehicles', vehicleRoutes);
 
 // CORS middleware

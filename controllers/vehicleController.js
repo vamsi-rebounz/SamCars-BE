@@ -103,6 +103,54 @@ class VehicleController {
             });
         }
     }
+    /**
+ * Delete a vehicle by ID
+ */
+    static async deleteVehicle(req, res) {
+        const { vehicle_id } = req.params;
+
+        if (!vehicle_id || isNaN(vehicle_id)) {
+            return res.status(400).json({
+                status: 'error',
+                message: 'Invalid or missing vehicle_id in path.'
+            });
+        }
+
+        const client = await pool.connect();
+
+        try {
+            // First, check if vehicle exists
+            const check = await client.query('SELECT * FROM vehicles WHERE vehicle_id = $1', [vehicle_id]);
+
+            if (check.rows.length === 0) {
+                return res.status(404).json({
+                    status: 'error',
+                    message: 'Vehicle not found.'
+                });
+            }
+
+            // Delete the vehicle
+            await client.query('DELETE FROM vehicles WHERE vehicle_id = $1', [vehicle_id]);
+
+            return res.status(200).json({
+                status: 'success',
+                message: 'Vehicle deleted successfully.',
+                data: {
+                    deleted_vehicle_id: Number(vehicle_id),
+                    deleted_at: new Date().toISOString()
+                }
+            });
+        } catch (error) {
+            console.error('Error deleting vehicle:', error);
+            return res.status(500).json({
+                status: 'error',
+                message: 'Failed to delete vehicle.'
+            });
+        } finally {
+            client.release();
+        }
+    }
+
 }
 
 module.exports = VehicleController; 
