@@ -26,7 +26,7 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
  
 // Mount routes
-app.use('/users', formidable(), userRoutes); // Only users route uses formidable
+app.use('/users', formidable(), userRoutes);
 app.use('/inventory', inventoryRoutes);
 app.use('/vehicles', vehicleRoutes);
  
