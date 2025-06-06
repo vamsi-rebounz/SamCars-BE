@@ -1,29 +1,21 @@
 require('dotenv').config();
 
-// Importing dependencies
+// Import dependencies
 const express = require('express');
-const formidable = require('express-formidable');
 const cors = require('cors');
+const formidable = require('express-formidable');
 
-// Importing routes
-const userRoutes = require('./routes/userRoutes');
-const inventoryRoutes = require('./routes/inventoryRoutes');
-const vehicleRoutes = require('./routes/vehicleRoutes');
-
-// Initializing express app and port
+// Initialize express app
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Middleware to parse JSON request bodies
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+// Import routes
+const userRoutes = require('./routes/userRoutes');
+const inventoryRoutes = require('./routes/inventoryRoutes');
+const vehicleRoutes = require('./routes/vehicleRoutes');
+const auctionRoutes = require('./routes/auctionRoutes');
 
-// Mount user routes
-app.use('/users', formidable(), userRoutes);
-app.use('/inventory', inventoryRoutes);
-app.use('/vehicles', vehicleRoutes);
-
-// CORS middleware
+// Middleware
 app.use(cors({
   origin: [
     "http://localhost:5173",
@@ -33,26 +25,33 @@ app.use(cors({
   credentials: true
 }));
 
-// Middleware to parse form-data
-app.use(formidable());
+// Parse JSON and URL-encoded data
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 
-// Health check route
+// Mount routes
+app.use('/users', formidable(), userRoutes); // expects form-data for users
+app.use('/inventory', inventoryRoutes);      // expects JSON
+app.use('/vehicles', vehicleRoutes);         // expects JSON
+app.use('/auction-tracker', formidable(), auctionRoutes); // expects form-data
+
+// Health check
 app.get('/health', (req, res) => {
-    res.json({ status: 'ok', message: 'Server is running' });
+  res.json({ status: 'ok', message: 'Server is running' });
 });
 
-// Basic route for testing server status
+// Default route
 app.get('/', (req, res) => {
-    res.json({ message: 'SamCars API is running!' });
+  res.json({ message: 'SamCars API is running!' });
 });
 
-// Default error handler
+// Global error handler
 app.use((err, req, res, next) => {
-    console.error(err.stack);
-    res.status(500).json({ error: 'Something went wrong!' });
+  console.error(err.stack);
+  res.status(500).json({ error: 'Something went wrong!' });
 });
 
-// Start the server
+// Start server
 app.listen(PORT, () => {
-    console.log(`Server is running on port ${PORT}`);
+  console.log(`🚀 Server is running on port ${PORT}`);
 });
