@@ -2,6 +2,9 @@ require('dotenv').config();
 const express = require('express');
 const formidable = require('express-formidable');
 const cors = require('cors');
+const pool = require('./config/db');
+const path = require('path');
+const fs = require('fs');
  
 // Import routes
 const userRoutes = require('./routes/userRoutes');
@@ -20,15 +23,27 @@ app.use(cors({
   ],
   credentials: true
 }));
+
+// Create uploads directory if it doesn't exist
+const uploadsDir = path.join(__dirname, 'uploads');
+if (!fs.existsSync(uploadsDir)) {
+  fs.mkdirSync(uploadsDir, { recursive: true });
+}
+
+// Serve uploaded files
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
  
-// Apply formidable only where needed (remove global use)
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
- 
+// Test endpoint
+app.get('/test', (req, res) => {
+  res.json({ message: 'Backend server is running and accessible' });
+});
+
 // Mount routes
+// Use formidable only for user routes that need file upload
 app.use('/users', formidable(), userRoutes);
-app.use('/inventory', inventoryRoutes);
-app.use('/vehicles', vehicleRoutes);
+// Use express.json for other routes
+app.use('/inventory', express.json(), inventoryRoutes);
+app.use('/vehicles', express.json(), vehicleRoutes);
  
 // Health checks
 app.get('/health', (req, res) => {
@@ -39,13 +54,24 @@ app.get('/', (req, res) => {
   res.json({ message: 'SamCars API is running!' });
 });
  
-// Error handling
+// Error handling middleware
 app.use((err, req, res, next) => {
   console.error(err.stack);
-  res.status(500).json({ error: 'Something went wrong!' });
+  res.status(500).send('Something broke!');
 });
  
-app.listen(PORT, () => {
-  console.log(`Server is running on port ${PORT}`);
+// Test database connection before starting server
+pool.connect((err, client, release) => {
+  if (err) {
+    console.error('Error connecting to the database:', err.stack);
+    process.exit(1);
+  }
+  release();
+  console.log('Successfully connected to PostgreSQL database');
+  
+  // Start server after successful database connection
+  app.listen(PORT, () => {
+    console.log(`Server is running on port ${PORT}`);
+  });
 });
  

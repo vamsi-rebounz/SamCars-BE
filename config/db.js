@@ -1,22 +1,20 @@
 const { Pool } = require('pg');
-require('dotenv').config(); // Load environment variables from .env file
+require('dotenv').config();
 
-// Create a new PostgreSQL connection pool
-const pool = new Pool({
-    user: process.env.DB_USER,
-    host: process.env.DB_HOST,
-    database: process.env.DB_DATABASE,
-    password: process.env.DB_PASSWORD,
-    port: process.env.DB_PORT,
+// Log connection details (excluding password)
+console.log('Database connection config:', {
+  user: process.env.DB_USER,
+  host: process.env.DB_HOST,
+  database: process.env.DB_NAME,
+  port: process.env.DB_PORT || 5432
 });
 
-// Test the database connection
-pool.connect((err, client, release) => {
-    if (err) {
-        return console.error('Error acquiring client', err.stack);
-    }
-    console.log('Successfully connected to PostgreSQL database!');
-    release(); // Release the client back to the pool
+const pool = new Pool({
+  user: process.env.DB_USER,
+  host: process.env.DB_HOST,
+  database: process.env.DB_NAME,
+  password: process.env.DB_PASSWORD,
+  port: process.env.DB_PORT || 5432
 });
 
 module.exports = pool;

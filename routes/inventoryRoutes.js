@@ -85,20 +85,56 @@ const handleMulterError = (err, req, res, next) => {
     next();
 };
 
+// Add logging middleware
+const logRequest = (req, res, next) => {
+    console.log('Request body:', req.body);
+    console.log('Request files:', req.files);
+    next();
+};
+
+// Test endpoint for inventory routes
+router.get('/test', (req, res) => {
+    res.json({ message: 'Inventory routes are accessible' });
+});
+
+// Test endpoint for admin authentication
+router.get('/test-admin', authenticateToken, isAdmin, (req, res) => {
+    console.log('Admin test endpoint accessed by user:', {
+        id: req.user.user_id,
+        email: req.user.email,
+        role: req.user.role
+    });
+    res.json({
+        success: true,
+        message: 'Admin authentication successful',
+        user: {
+            id: req.user.user_id,
+            email: req.user.email,
+            role: req.user.role
+        }
+    });
+});
+
 // Inventory routes starts here
 // Add vehicle
 router.post(
     '/add-vehicle',
+    authenticateToken,
+    isAdmin,
     upload.array('images', 10),
     handleMulterError,
+    logRequest,
     InventoryController.addVehicle
 );
 
 // Update vehicle
 router.put(
     '/vehicles/update',
+    authenticateToken,
+    isAdmin,
     upload.array('images', 10),
     handleMulterError,
+    logRequest,
     InventoryController.updateVehicle
 );
 

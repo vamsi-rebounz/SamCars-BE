@@ -106,6 +106,55 @@ const UserModel = {
             console.error('Error in getUserByEmail:', error);
             throw new Error('Could not fetch user by email.');
         }
+    },
+
+    async createUserSession(userId, token, ipAddress, userAgent) {
+        try {
+            // Update last_login timestamp
+            await pool.query(
+                'UPDATE users SET last_login = CURRENT_TIMESTAMP WHERE user_id = $1',
+                [userId]
+            );
+
+            // Create new session
+            const result = await pool.query(
+                `INSERT INTO user_sessions (
+                    user_id, token, expires_at, ip_address, user_agent
+                ) VALUES ($1, $2, NOW() + INTERVAL '7 days', $3, $4)
+                RETURNING session_id, expires_at`,
+                [userId, token, ipAddress, userAgent]
+            );
+
+            return result.rows[0];
+        } catch (error) {
+            console.error('Error in createUserSession:', error);
+            throw new Error('Could not create user session.');
+        }
+    },
+
+    async updateUser(userId, updateData) {
+        try {
+            const fields = Object.keys(updateData);
+            const values = Object.values(updateData);
+            
+            // Build the SET clause for the UPDATE query
+            const setClause = fields.map((field, index) => `${field} = $${index + 2}`).join(', ');
+            
+            const query = `
+                UPDATE users 
+                SET ${setClause}, updated_at = CURRENT_TIMESTAMP 
+                WHERE user_id = $1 
+                RETURNING user_id, first_name, last_name, email, role, 
+                          email_verified, phone, driver_license, date_of_birth, 
+                          created_at, updated_at, last_login
+            `;
+            
+            const result = await pool.query(query, [userId, ...values]);
+            return result.rows[0];
+        } catch (error) {
+            console.error('Error in updateUser:', error);
+            throw new Error('Could not update user details.');
+        }
     }
 };
 

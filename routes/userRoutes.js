@@ -10,6 +10,10 @@ router.post('/register', UserController.registerUser);
 router.post('/login', UserController.loginUser);
 router.post('/password-reset', UserController.requestPasswordReset);
 
+// Protected Routes
+router.get('/profile', authenticateToken, UserController.getUserProfile);
+router.put('/profile', authenticateToken, UserController.updateUserProfile);
+
 // Protected Route Examples
 router.get('/fetch-by-id', authenticateToken, UserController.fetchUserById);
 router.get('/adminDashboard', authenticateToken, isAdmin, (req, res) => {

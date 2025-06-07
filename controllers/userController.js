@@ -31,9 +31,35 @@ const UserController = {
 
         try {
             const newUser = await UserModel.createUser({ first_name, last_name, email, password, role });
+            
+            const payload = {
+                user_id: newUser.user_id,
+                email: newUser.email,
+                role: newUser.role
+            };
+
+            const accessToken = jwt.sign(payload, process.env.JWT_SECRET, {
+                expiresIn: process.env.JWT_EXPIRES_IN || '15m'
+            });
+
+            const refreshToken = jwt.sign(payload, process.env.JWT_REFRESH_SECRET, {
+                expiresIn: process.env.JWT_REFRESH_EXPIRES_IN || '7d'
+            });
+
+            // Create user session
+            const session = await UserModel.createUserSession(
+                newUser.user_id,
+                refreshToken,
+                req.ip,
+                req.headers['user-agent']
+            );
+
             res.status(201).json({
                 success: true,
                 message: 'User created successfully.',
+                accessToken,
+                refreshToken,
+                sessionExpires: session.expires_at,
                 user: {
                     id: newUser.user_id,
                     email: newUser.email,
@@ -92,12 +118,21 @@ const UserController = {
             const refreshToken = jwt.sign(payload, process.env.JWT_REFRESH_SECRET, {
                 expiresIn: process.env.JWT_REFRESH_EXPIRES_IN || '7d'
             });
+
+            // Create user session
+            const session = await UserModel.createUserSession(
+                user.user_id,
+                refreshToken,
+                req.ip,
+                req.headers['user-agent']
+            );
     
             return res.status(200).json({
                 success: true,
                 message: "Login successful",
                 accessToken,
                 refreshToken,
+                sessionExpires: session.expires_at,
                 user: {
                     id: user.user_id,
                     email: user.email,
@@ -165,6 +200,76 @@ const UserController = {
         } catch (error) {
             console.error('Password reset error:', error);
             res.status(500).json({ message: 'Failed to send password reset email.' });
+        }
+    },
+
+    async getUserProfile(req, res) {
+        try {
+            const userId = req.user.user_id; // From auth middleware
+            const user = await UserModel.getUserById(userId);
+            
+            if (!user) {
+                return res.status(404).json({ success: false, message: 'User not found.' });
+            }
+
+            // Remove sensitive information
+            delete user.password_hash;
+            
+            res.status(200).json({
+                success: true,
+                user
+            });
+        } catch (error) {
+            console.error('Error in getUserProfile:', error);
+            res.status(500).json({ success: false, message: 'Internal server error.' });
+        }
+    },
+
+    async updateUserProfile(req, res) {
+        try {
+            const userId = req.user.user_id; // From auth middleware
+            const updateData = req.fields;
+            
+            // Validate update data
+            const allowedFields = ['first_name', 'last_name', 'phone', 'driver_license', 'date_of_birth'];
+            const filteredData = {};
+            
+            allowedFields.forEach(field => {
+                if (updateData[field] !== undefined) {
+                    filteredData[field] = updateData[field];
+                }
+            });
+
+            if (Object.keys(filteredData).length === 0) {
+                return res.status(400).json({ 
+                    success: false, 
+                    message: 'No valid fields to update.' 
+                });
+            }
+
+            const updatedUser = await UserModel.updateUser(userId, filteredData);
+            
+            if (!updatedUser) {
+                return res.status(404).json({ 
+                    success: false, 
+                    message: 'User not found.' 
+                });
+            }
+
+            // Remove sensitive information
+            delete updatedUser.password_hash;
+            
+            res.status(200).json({
+                success: true,
+                message: 'Profile updated successfully.',
+                user: updatedUser
+            });
+        } catch (error) {
+            console.error('Error in updateUserProfile:', error);
+            res.status(500).json({ 
+                success: false, 
+                message: 'Failed to update profile.' 
+            });
         }
     }
 };
