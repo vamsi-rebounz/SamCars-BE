@@ -91,6 +91,8 @@ router.post(
     '/add-vehicle',
     upload.array('images', 10),
     handleMulterError,
+    // authenticateToken,
+    // isAdmin,
     InventoryController.addVehicle
 );
 
@@ -99,7 +101,17 @@ router.put(
     '/vehicles/update',
     upload.array('images', 10),
     handleMulterError,
+    // authenticateToken,
+    // isAdmin,
     InventoryController.updateVehicle
+);
+
+// Fetch vehicles with filters
+router.get(
+    '/fetch-vehicles',
+    // authenticateToken,
+    // isAdmin,
+    InventoryController.getInventory
 );
 
 module.exports = router; 
