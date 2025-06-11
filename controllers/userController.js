@@ -7,8 +7,10 @@ const nodemailer = require('nodemailer');
 require('dotenv').config();
 
 const UserController = {
+    // Register a new user
     async registerUser(req, res) {
         // Using req.fields to handle form-data
+        console.log('req.fields:', req.fields);
         const first_name = req.fields.first_name;
         const last_name = req.fields.last_name;
         const email = req.fields.email;
@@ -50,6 +52,7 @@ const UserController = {
         }
     },
 
+    // Login a user
     async loginUser(req, res) {
         console.log('Login attempt received:', { email: req.fields.email });
         const { email, password } = req.fields;
@@ -113,6 +116,8 @@ const UserController = {
             res.status(500).json({ message: 'Internal server error' });
         }
     },
+
+    // Fetch a user by ID
     async fetchUserById(req, res) {
         const { id } = req.query;
 
@@ -132,6 +137,7 @@ const UserController = {
         }
     },
 
+    // Request a password reset
     async requestPasswordReset(req, res) {
         const { email } = req.body;
         if (!email) return res.status(400).json({ message: 'Email is required.' });

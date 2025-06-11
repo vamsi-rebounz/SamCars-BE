@@ -1,29 +1,17 @@
 require('dotenv').config();
-
-// Importing dependencies
 const express = require('express');
 const formidable = require('express-formidable');
 const cors = require('cors');
-
-// Importing routes
+ 
+// Import routes
 const userRoutes = require('./routes/userRoutes');
 const inventoryRoutes = require('./routes/inventoryRoutes');
 const vehicleRoutes = require('./routes/vehicleRoutes');
-
-// Initializing express app and port
+ 
 const app = express();
 const PORT = process.env.PORT || 3000;
-
-// Middleware to parse JSON request bodies
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
-
-// Mount user routes
-app.use('/users', formidable(), userRoutes);
-app.use('/inventory', inventoryRoutes);
-app.use('/vehicles', vehicleRoutes);
-
-// CORS middleware
+ 
+// CORS should come before routes
 app.use(cors({
   origin: [
     "http://localhost:5173",
@@ -32,27 +20,32 @@ app.use(cors({
   ],
   credentials: true
 }));
-
-// Middleware to parse form-data
-app.use(formidable());
-
-// Health check route
+ 
+// Apply formidable only where needed (remove global use)
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+ 
+// Mount routes
+app.use('/users', formidable(), userRoutes);
+app.use('/inventory', inventoryRoutes);
+app.use('/vehicles', vehicleRoutes);
+ 
+// Health checks
 app.get('/health', (req, res) => {
-    res.json({ status: 'ok', message: 'Server is running' });
+  res.json({ status: 'ok', message: 'Server is running' });
 });
-
-// Basic route for testing server status
+ 
 app.get('/', (req, res) => {
-    res.json({ message: 'SamCars API is running!' });
+  res.json({ message: 'SamCars API is running!' });
 });
-
-// Default error handler
+ 
+// Error handling
 app.use((err, req, res, next) => {
-    console.error(err.stack);
-    res.status(500).json({ error: 'Something went wrong!' });
+  console.error(err.stack);
+  res.status(500).json({ error: 'Something went wrong!' });
 });
-
-// Start the server
+ 
 app.listen(PORT, () => {
-    console.log(`Server is running on port ${PORT}`);
+  console.log(`Server is running on port ${PORT}`);
 });
+ 
