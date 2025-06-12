@@ -124,7 +124,7 @@ class InventoryController {
                 search = '',
                 sort_by = 'date_added',
                 sort_order = 'desc',
-                status = 'available'
+                status
             } = req.query;
 
             const inventoryData = await InventoryModel.getInventory({
@@ -151,6 +151,40 @@ class InventoryController {
                 message = error.message;
             }
             res.status(statusCode).json({ status: 'error', message: message });
+        }
+    }
+
+    /**
+     * Deletes a vehicle and its associated data.
+     * @param {object} req - Express request object.
+     * @param {object} res - Express response object.
+     */
+    static async deleteVehicle(req, res) {
+        const vehicle_id = parseInt(req.params.id, 10);
+        console.log("Vehicle id :", vehicle_id);
+        // Input validation
+        if (isNaN(vehicle_id)) {
+            return res.status(400).json({ error: 'Invalid vehicle ID provided. Must be a number.' });
+        }
+
+        try {
+            const deletedVehicle = await InventoryModel.deleteVehicle(vehicle_id);
+
+            if (!deletedVehicle) {
+                return res.status(404).json({ message: 'Vehicle not found.' });
+            }
+
+            res.status(200).json({
+                status: "success",
+                message: "Vehicle and all associated data deleted successfully.",
+                data: {
+                  deleted_vehicle_id: deletedVehicle.vehicle_id, // Use appropriate ID field
+                  deleted_at: new Date().toISOString() // Current timestamp in ISO format
+                }
+            });
+        } catch (error) {
+            console.error('Error in VehicleController.deleteVehicleById:', error);
+            res.status(500).json({ error: 'An internal server error occurred while deleting the vehicle.', details: error.message });
         }
     }
 }

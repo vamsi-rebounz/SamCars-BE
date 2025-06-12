@@ -1,4 +1,4 @@
--- Create enum types (unchanged)
+-- Create enum types
 CREATE TYPE user_role AS ENUM ('customer', 'admin', 'sales', 'technician', 'manager');
 CREATE TYPE appointment_status AS ENUM ('pending', 'confirmed', 'completed', 'cancelled', 'rescheduled');
 CREATE TYPE payment_status AS ENUM ('pending', 'completed', 'failed', 'refunded');
@@ -9,8 +9,6 @@ CREATE TYPE contact_method AS ENUM ('email', 'phone', 'sms', 'whatsapp');
 CREATE TYPE fuel_type AS ENUM ('gasoline', 'diesel', 'electric', 'hybrid', 'plug_in_hybrid');
 CREATE TYPE transmission_type AS ENUM ('automatic', 'manual', 'cvt', 'semi_automatic');
 CREATE TYPE body_type AS ENUM ('sedan', 'suv', 'truck', 'coupe', 'convertible', 'hatchback', 'minivan', 'van');
-
--- Create tables
 
 -- Users and Authentication
 CREATE TABLE USERS (
@@ -39,6 +37,32 @@ CREATE TABLE USER_SESSIONS (
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     is_active BOOLEAN NOT NULL DEFAULT TRUE
 );
+
+-- Create indexes
+CREATE INDEX idx_users_email ON USERS(email);
+CREATE INDEX idx_user_sessions_user_id ON USER_SESSIONS(user_id);
+CREATE INDEX idx_user_sessions_token ON USER_SESSIONS(token); 
+
+
+-- Create Users Table
+CREATE TABLE IF NOT EXISTS USERS (
+    user_id SERIAL PRIMARY KEY,
+    first_name VARCHAR(100) NOT NULL,
+    last_name VARCHAR(100) NOT NULL,
+    email VARCHAR(255) NOT NULL UNIQUE,
+    password_hash VARCHAR(255) NOT NULL,
+    role VARCHAR(50) DEFAULT 'customer' NOT NULL,
+    email_verified BOOLEAN DEFAULT FALSE NOT NULL,
+    phone VARCHAR(20),
+    driver_license VARCHAR(50),
+    date_of_birth DATE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Create an index on email for faster lookups
+CREATE INDEX IF NOT EXISTS idx_users_email ON USERS(email); 
+
 
 -- Vehicles
 CREATE TABLE VEHICLE_MAKES (
@@ -93,12 +117,19 @@ CREATE TABLE VEHICLE_FEATURE_MAPPING (
 );
 
 CREATE TABLE VEHICLE_IMAGES (
-    image_id SERIAL PRIMARY KEY,
-    vehicle_id INTEGER NOT NULL REFERENCES VEHICLES(vehicle_id) ON DELETE CASCADE,
-    image_url TEXT NOT NULL,
-    is_primary BOOLEAN NOT NULL DEFAULT FALSE,
-    display_order INTEGER NOT NULL DEFAULT 0,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+    vehicle_id INTEGER NOT NULL,
+    image_urls text[] COLLATE pg_catalog."default" NOT NULL,
+    image_metadata jsonb,
+    primary_image_index integer NOT NULL DEFAULT 0,
+    is_primary BOOLEAN NOT NULL DEFAULT FALSE,  -- Added this column
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT vehicle_images_pkey PRIMARY KEY (vehicle_id),
+    CONSTRAINT vehicle_images_vehicle_id_fkey FOREIGN KEY (vehicle_id)
+        REFERENCES public.vehicles (vehicle_id) MATCH SIMPLE
+        ON UPDATE NO ACTION
+        ON DELETE CASCADE,
+    CONSTRAINT vehicle_images_primary_image_index_check CHECK (primary_image_index >= 0)
 );
 
 CREATE TABLE VEHICLE_TAGS (
@@ -127,15 +158,13 @@ CREATE TABLE DEALER_INVENTORY (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
--- Wishlist
-CREATE TABLE USER_WISHLIST (
-    wishlist_id SERIAL PRIMARY KEY,
-    user_id INTEGER NOT NULL REFERENCES USERS(user_id) ON DELETE CASCADE,
-    vehicle_id INTEGER NOT NULL REFERENCES VEHICLES(vehicle_id) ON DELETE CASCADE,
-    added_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    notes TEXT,
-    UNIQUE (user_id, vehicle_id)
-);
+-- Create indexes
+CREATE INDEX idx_vehicles_make_model ON VEHICLES(make_id, model_id);
+CREATE INDEX idx_vehicles_status ON VEHICLES(status);
+CREATE INDEX idx_vehicles_price ON VEHICLES(price);
+CREATE INDEX idx_vehicles_year ON VEHICLES(year);
+CREATE INDEX idx_vehicle_images_primary ON VEHICLE_IMAGES(vehicle_id, is_primary) WHERE is_primary = TRUE; 
+
 
 -- Test Drives and Service Appointments
 CREATE TABLE TEST_DRIVE_APPOINTMENTS (
@@ -244,6 +273,16 @@ CREATE TABLE SERVICE_HISTORY (
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Create indexes
+CREATE INDEX idx_test_drive_appointments_user ON TEST_DRIVE_APPOINTMENTS(user_id);
+CREATE INDEX idx_test_drive_appointments_vehicle ON TEST_DRIVE_APPOINTMENTS(vehicle_id);
+CREATE INDEX idx_test_drive_appointments_date ON TEST_DRIVE_APPOINTMENTS(appointment_date, appointment_time);
+CREATE INDEX idx_service_appointments_user ON SERVICE_APPOINTMENTS(user_id);
+CREATE INDEX idx_service_appointments_vehicle ON SERVICE_APPOINTMENTS(vehicle_id);
+CREATE INDEX idx_service_appointments_date ON SERVICE_APPOINTMENTS(appointment_date, appointment_time);
+CREATE INDEX idx_service_history_vehicle ON SERVICE_HISTORY(vehicle_id); 
+
+
 -- Vehicle Sales and Auctions
 CREATE TABLE VEHICLE_SALES (
     sale_id SERIAL PRIMARY KEY,
@@ -323,6 +362,18 @@ CREATE TABLE DOCUMENTS (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Create indexes
+CREATE INDEX idx_vehicle_sales_vehicle ON VEHICLE_SALES(vehicle_id);
+CREATE INDEX idx_vehicle_sales_buyer ON VEHICLE_SALES(buyer_id);
+CREATE INDEX idx_vehicle_sales_date ON VEHICLE_SALES(sale_date);
+CREATE INDEX idx_auction_vehicles_status ON AUCTION_VEHICLES(status);
+CREATE INDEX idx_payments_user ON PAYMENTS(user_id);
+CREATE INDEX idx_payments_status ON PAYMENTS(status);
+CREATE INDEX idx_payments_created ON PAYMENTS(created_at);
+CREATE INDEX idx_documents_user ON DOCUMENTS(user_id);
+CREATE INDEX idx_documents_vehicle ON DOCUMENTS(vehicle_id); 
+
+
 -- Dashboard and Analytics
 CREATE TABLE DASHBOARD_METRICS (
     metric_date DATE NOT NULL DEFAULT CURRENT_DATE,
@@ -363,37 +414,6 @@ CREATE TABLE DASHBOARD_ALERTS (
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
--- Create indexes (updated to use CAPITAL_CASE table names)
-CREATE INDEX idx_user_sessions_user_id ON USER_SESSIONS(user_id);
-CREATE INDEX idx_user_sessions_token ON USER_SESSIONS(token);
-
-CREATE INDEX idx_vehicles_make_model ON VEHICLES(make_id, model_id);
-CREATE INDEX idx_vehicles_status ON VEHICLES(status);
-CREATE INDEX idx_vehicles_price ON VEHICLES(price);
-CREATE INDEX idx_vehicles_year ON VEHICLES(year);
-CREATE INDEX idx_vehicle_images_primary ON VEHICLE_IMAGES(vehicle_id, is_primary) WHERE is_primary = TRUE;
-
-CREATE INDEX idx_user_wishlist_user ON USER_WISHLIST(user_id);
-CREATE INDEX idx_user_wishlist_vehicle ON USER_WISHLIST(vehicle_id);
-
-CREATE INDEX idx_test_drive_appointments_user ON TEST_DRIVE_APPOINTMENTS(user_id);
-CREATE INDEX idx_test_drive_appointments_vehicle ON TEST_DRIVE_APPOINTMENTS(vehicle_id);
-CREATE INDEX idx_test_drive_appointments_date ON TEST_DRIVE_APPOINTMENTS(appointment_date, appointment_time);
-CREATE INDEX idx_service_appointments_user ON SERVICE_APPOINTMENTS(user_id);
-CREATE INDEX idx_service_appointments_vehicle ON SERVICE_APPOINTMENTS(vehicle_id);
-CREATE INDEX idx_service_appointments_date ON SERVICE_APPOINTMENTS(appointment_date, appointment_time);
-CREATE INDEX idx_service_history_vehicle ON SERVICE_HISTORY(vehicle_id);
-
-CREATE INDEX idx_vehicle_sales_vehicle ON VEHICLE_SALES(vehicle_id);
-CREATE INDEX idx_vehicle_sales_buyer ON VEHICLE_SALES(buyer_id);
-CREATE INDEX idx_vehicle_sales_date ON VEHICLE_SALES(sale_date);
-CREATE INDEX idx_auction_vehicles_status ON AUCTION_VEHICLES(status);
-
-CREATE INDEX idx_payments_user ON PAYMENTS(user_id);
-CREATE INDEX idx_payments_status ON PAYMENTS(status);
-CREATE INDEX idx_payments_created ON PAYMENTS(created_at);
-CREATE INDEX idx_documents_user ON DOCUMENTS(user_id);
-CREATE INDEX idx_documents_vehicle ON DOCUMENTS(vehicle_id);
-
+-- Create indexes
 CREATE INDEX idx_dashboard_alerts_priority ON DASHBOARD_ALERTS(priority, is_resolved);
-CREATE INDEX idx_dashboard_alerts_type ON DASHBOARD_ALERTS(type, is_resolved);
+CREATE INDEX idx_dashboard_alerts_type ON DASHBOARD_ALERTS(type, is_resolved); 
