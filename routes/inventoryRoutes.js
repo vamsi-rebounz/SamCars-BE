@@ -114,4 +114,10 @@ router.get(
     InventoryController.getInventory
 );
 
+router.delete(
+    '/vehicles/delete/:id',
+    // authenticateToken,
+    // isAdmin,
+    InventoryController.deleteVehicle
+);
 module.exports = router; 

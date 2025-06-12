@@ -4,7 +4,7 @@ const { uploadToFirebase } = require('../utils/firebaseUploader');
 const { deleteFromFirebase } = require('../utils/firebaseDeleter');
 
 class InventoryModel {
-    
+
     /**
      * Inserts a new vehicle into the database, handling makes, models, tags, and image uploads.
      * @param {object} vehicleData - Data for the vehicle to be added.
@@ -481,6 +481,8 @@ class InventoryModel {
               v.price,
               v.mileage,
               v.status,
+              v.body_type,
+              v.is_featured,
               di.date_added,
               COALESCE(
                 (SELECT image_urls[primary_image_index + 1] FROM VEHICLE_IMAGES vi WHERE vi.vehicle_id = v.vehicle_id AND vi.is_primary = TRUE LIMIT 1),
@@ -541,7 +543,8 @@ class InventoryModel {
                 tags: row.tags || [],
                 date_added: row.date_added ? new Date(row.date_added).toISOString().split('T')[0] : null,
                 image_url: row.image_url,
-                location: row.location
+                body_type: row.body_type,
+                is_featured: row.is_featured,
             }));
 
             const countResult = await client.query(countQuery, values);
@@ -576,6 +579,64 @@ class InventoryModel {
             };
         } finally {
             client.release();
+        }
+    }
+
+    /**
+   * Deletes a vehicle and all its associated data from the database
+   * and related images from Firebase.
+   * @param {number} vehicleId - The ID of the vehicle to delete.
+   * @returns {object|null} - The deleted vehicle object if successful, null if not found.
+   * @throws {Error} - If any database or Firebase operation fails.
+   */
+    static async deleteVehicle(vehicle_id) {
+        let client; // Declare client for finally block scope
+
+        try {
+            client = await pool.connect();
+            await client.query('BEGIN'); // Start a transaction
+
+            // 1. Fetch image URLs before deleting vehicle data
+            const imagesQuery = 'SELECT image_urls FROM VEHICLE_IMAGES WHERE vehicle_id = $1';
+            const imagesResult = await client.query(imagesQuery, [vehicle_id]);
+            const imageUrlsToDelete = imagesResult.rows.length > 0 ? imagesResult.rows[0].image_urls : [];
+
+            // 2. Delete/Update related records based on foreign key constraints
+            await client.query('DELETE FROM VEHICLE_SALES WHERE vehicle_id = $1', [vehicle_id]);
+            await client.query('DELETE FROM AUCTION_VEHICLES WHERE vehicle_id = $1', [vehicle_id]);
+            await client.query('DELETE FROM TEST_DRIVE_APPOINTMENTS WHERE vehicle_id = $1', [vehicle_id]);
+            await client.query('DELETE FROM SERVICE_APPOINTMENTS WHERE vehicle_id = $1', [vehicle_id]);
+
+            // For ON DELETE SET NULL (e.g., PAYMENTS, DOCUMENTS)
+            await client.query('UPDATE PAYMENTS SET vehicle_id = NULL WHERE vehicle_id = $1', [vehicle_id]);
+            await client.query('UPDATE DOCUMENTS SET vehicle_id = NULL WHERE vehicle_id = $1', [vehicle_id]);
+
+            // 3. Delete the vehicle from the main VEHICLES table
+            const deleteVehicleQuery = 'DELETE FROM VEHICLES WHERE vehicle_id = $1 RETURNING *';
+            const result = await client.query(deleteVehicleQuery, [vehicle_id]);
+
+            if (result.rows.length === 0) {
+                await client.query('ROLLBACK'); // Rollback if vehicle not found
+                return null; // Indicate vehicle not found
+            }
+
+            // 4. Commit database changes first
+            await client.query('COMMIT');
+
+            // 5. Delete images from Firebase Storage (after successful DB commit)
+            await deleteFromFirebase(imageUrlsToDelete);
+
+            return result.rows[0]; // Return the deleted vehicle object
+        } catch (error) {
+            if (client) {
+                await client.query('ROLLBACK'); // Rollback on error
+            }
+            console.error('Error in VehicleModel.deleteVehicle:', error);
+            throw error; // Re-throw the error for the controller to handle
+        } finally {
+            if (client) {
+                client.release(); // Release client back to pool
+            }
         }
     }
 }

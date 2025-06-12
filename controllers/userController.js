@@ -7,6 +7,7 @@ const nodemailer = require('nodemailer');
 require('dotenv').config();
 
 const UserController = {
+    
     // Register a new user
     async registerUser(req, res) {
         // Using req.fields to handle form-data

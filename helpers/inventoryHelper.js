@@ -41,4 +41,4 @@ const buildWhereClauseForInventory = (queryParams) => {
     return { whereClause, values, paramIndex };
   };
 
-  module.exports = {  buildWhereClauseForInventory };
+module.exports = {  buildWhereClauseForInventory };
