@@ -13,4 +13,10 @@ router.post('/vehicles/add-new',
     AuctionController.addAuctionPurchase
 );
 
+router.get('/fetch-all',
+    // authenticateToken,
+    // isAdmin,
+    AuctionController.getAuctionVehicles
+)
+
 module.exports = router;
