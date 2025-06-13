@@ -17,6 +17,12 @@ router.get('/fetch-all',
     // authenticateToken,
     // isAdmin,
     AuctionController.getAuctionVehicles
-)
+);
+
+router.get('/dashboard-summary',
+    // authenticateToken,
+    // isAdmin,
+    AuctionController.getAuctionDashboardSummary
+);
 
 module.exports = router;

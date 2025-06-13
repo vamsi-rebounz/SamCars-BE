@@ -1,16 +1,18 @@
+// models/auctionModel.js
 const pool = require('../config/db');
 const { VEHICLE_STATUSES } = require('../constants/enums');
+
 class AuctionModel {
   static async addAuctionPurchase(vehicleId, purchaseData) {
     const query = `
       INSERT INTO auction_vehicles (
-        vehicle_id, purchase_date, purchase_price, additional_costs, 
+        vehicle_id, purchase_date, purchase_price, additional_costs,
         list_price, status, notes
-      ) 
+      )
       VALUES ($1, $2, $3, $4, $5, $6, $7)
       RETURNING *
     `;
-  
+
     const values = [
       vehicleId,
       purchaseData.purchase_date,
@@ -20,7 +22,7 @@ class AuctionModel {
       'auction',
       purchaseData.notes || null
     ];
-  
+
     const { rows } = await pool.query(query, values);
     return rows[0];
   }
@@ -38,7 +40,7 @@ class AuctionModel {
         WHERE vehicle_id = $2;
     `;
     await client.query(query, [status, vehicleId]);
-}
+  }
   static async findByVehicleId(vehicleId) {
     const { rows } = await pool.query(
       'SELECT * FROM auction_vehicles WHERE vehicle_id = $1',
@@ -189,6 +191,95 @@ class AuctionModel {
     } finally {
         client.release();
     }
+  }
+
+  /**
+     * Fetches summary statistics for the auction dashboard.
+     * Calculates total investment, total profit, vehicles purchased, and vehicles sold
+     * within a given date range and optional status filter.
+     * @param {object} options - Options for filtering the summary.
+     * @param {string} options.dateFrom - Start date for filtering (YYYY-MM-DD).
+     * @param {string} options.dateTo - End date for filtering (YYYY-MM-DD).
+     * @param {string} [options.status] - Optional: Filter by vehicle status.
+     * @returns {Promise<{
+    * totalInvestment: number,
+    * totalProfit: number,
+    * vehiclesPurchased: number,
+    * vehiclesSold: number
+    * }>} - Summary statistics.
+  */
+  static async getAuctionSummaryStatistics({ dateFrom, dateTo, status }) {
+        const client = await pool.connect();
+        try {
+            // Basic validation for status if provided
+            if (status && !VEHICLE_STATUSES.includes(status)) {
+                throw new Error(`Invalid status: ${status}. Allowed statuses are: ${VEHICLE_STATUSES.join(', ')}`);
+            }
+
+            // Query to get total investment and vehicles purchased
+            let purchasedQuery = `
+                SELECT
+                    COUNT(*) AS "vehiclesPurchased",
+                    COALESCE(SUM(total_investment), 0) AS "totalInvestment"
+                FROM
+                    AUCTION_VEHICLES
+                WHERE
+                    purchase_date BETWEEN $1 AND $2
+            `;
+
+            // Query to get total profit and vehicles sold
+            // FIXED: Using 'updated_at::date' and filtering by 'status = 'sold'' and 'sold_price IS NOT NULL'
+            let soldQuery = `
+                SELECT
+                    COUNT(*) AS "vehiclesSold",
+                    COALESCE(SUM(profit), 0) AS "totalProfit"
+                FROM
+                    AUCTION_VEHICLES
+                WHERE
+                    status = 'sold'
+                    AND sold_price IS NOT NULL
+                    AND updated_at::date BETWEEN $1 AND $2
+            `;
+
+            const queryParams = [dateFrom, dateTo]; // Parameters for both queries
+
+            // If a status filter is provided, add it to both queries
+            // NOTE: This applies the status filter to *both* purchased and sold counts.
+            // If you only want the status filter to apply to sold vehicles (e.g., status='sold' only),
+            // then remove the 'status' param from purchasedQuery or handle it separately.
+            // Given the schema, filtering both by the same status for consistency makes sense.
+            if (status) {
+                // If status is provided, it applies to both queries.
+                // For purchased, it means vehicles purchased within range AND current status.
+                // For sold, it means vehicles sold within range AND current status (which will be 'sold').
+                purchasedQuery += ` AND status = $3`;
+                soldQuery += ` AND status = $3`; // This will be redundant if status is 'sold'
+                queryParams.push(status);
+            }
+
+            // Execute both queries concurrently
+            const [purchasedResult, soldResult] = await Promise.all([
+                client.query(purchasedQuery, queryParams),
+                client.query(soldQuery, queryParams)
+            ]);
+
+            const purchasedData = purchasedResult.rows[0];
+            const soldData = soldResult.rows[0];
+
+            return {
+                // Ensure values are numbers using parseFloat and handle potential nulls from DB (though COALESCE helps)
+                totalInvestment: parseFloat(purchasedData.totalInvestment),
+                vehiclesPurchased: parseInt(purchasedData.vehiclesPurchased),
+                totalProfit: parseFloat(soldData.totalProfit),
+                vehiclesSold: parseInt(soldData.vehiclesSold)
+            };
+
+        } catch (error) {
+            console.error('Error fetching auction summary statistics:', error);
+            throw error; // Re-throw to be caught by the controller
+        } finally {
+            client.release(); // Always release the client back to the pool
+        }
   }
 }
 

@@ -6,7 +6,7 @@ const { validateVehicleData } = require('../validators/vehicleValidator');
 const { VEHICLE_STATUSES } = require('../constants/enums');
 class AuctionController {
     
-  static async addAuctionPurchase(req, res) {
+    static async addAuctionPurchase(req, res) {
       const client = await pool.connect(); // Get a client from the pool
       try {
           await client.query('BEGIN'); // Start a transaction
@@ -153,6 +153,90 @@ class AuctionController {
             res.status(500).json({ status: "error", message: error.message || "Failed to fetch auction vehicles." });
         }
     };
+
+    /**
+     * Fetches summary statistics for the auction dashboard.
+     * Query params:
+     * - `date_from` (optional): Start date (YYYY-MM-DD). Defaults to '1900-01-01' if not provided.
+     * - `date_to` (optional): End date (YYYY-MM-DD). Defaults to current date if not provided.
+     * - `status` (optional): Filter by vehicle status (e.g., 'sold', 'auction').
+     */
+    static async getAuctionDashboardSummary(req, res) {
+        try {
+            let { date_from, date_to, status } = req.query; // Use 'let' to allow reassignment
+
+            // --- Set default dates if not provided ---
+            // Default `date_from` to a very early date if not provided
+            date_from = date_from ? String(date_from).trim() : '1900-01-01';
+
+            // Default `date_to` to the current date if not provided
+            const today = new Date();
+            const year = today.getFullYear();
+            const month = String(today.getMonth() + 1).padStart(2, '0'); // Months are 0-indexed
+            const day = String(today.getDate()).padStart(2, '0');
+            const defaultDateTo = `${year}-${month}-${day}`;
+            date_to = date_to ? String(date_to).trim() : defaultDateTo;
+            // --- End of default date setting ---
+
+            // Basic date format validation (YYYY-MM-DD)
+            const isValidDate = (dateString) => /^\d{4}-\d{2}-\d{2}$/.test(dateString) && !isNaN(new Date(dateString));
+            if (!isValidDate(date_from) || !isValidDate(date_to)) {
+                return res.status(400).json({
+                    status: "error",
+                    message: "Invalid date format. Dates must be in YYYY-MM-DD format."
+                });
+            }
+
+            // Ensure `date_from` is not after `date_to`
+            if (new Date(date_from) > new Date(date_to)) {
+                return res.status(400).json({
+                    status: "error",
+                    message: "date_from cannot be after date_to."
+                });
+            }
+
+            // Validate status if provided against your enum
+            if (status && !VEHICLE_STATUSES.includes(status)) {
+                 return res.status(400).json({
+                    status: "error",
+                    message: `Invalid status: ${status}. Allowed statuses are: ${VEHICLE_STATUSES.join(', ')}`
+                });
+            }
+
+            // Fetch summary statistics from the model
+            const summary = await AuctionVehicle.getAuctionSummaryStatistics({
+                dateFrom: date_from,
+                dateTo: date_to,
+                status: status || null // Pass null if status is not provided
+            });
+
+            // Format the response according to the specified structure
+            res.status(200).json({
+                status: "success",
+                data: {
+                    summary: {
+                        totalInvestment: {
+                            amount: summary.totalInvestment.toFixed(2), // Format to 2 decimal places
+                            currency: "USD" // Assuming USD as default currency
+                        },
+                        totalProfit: {
+                            amount: summary.totalProfit.toFixed(2), // Format to 2 decimal places
+                            currency: "USD"
+                        },
+                        vehiclesPurchased: summary.vehiclesPurchased,
+                        vehiclesSold: summary.vehiclesSold
+                    }
+                }
+            });
+
+        } catch (error) {
+            console.error('Error in getAuctionDashboardSummary controller:', error);
+            res.status(500).json({
+                status: "error",
+                message: error.message || "Failed to fetch auction dashboard summary."
+            });
+        }
+    }
 }
 
 module.exports =  AuctionController;
