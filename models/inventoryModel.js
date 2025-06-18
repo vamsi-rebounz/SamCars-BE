@@ -14,141 +14,133 @@ class InventoryModel {
     static async addVehicle(vehicleData, files) {
         const client = await pool.connect();
         try {
+            console.log('Starting addVehicle transaction.');
+            console.log('Received vehicle data in model:', JSON.stringify(vehicleData, null, 2));
+            console.log('Received files in model:', vehicleData.images ? vehicleData.images.length : 0, 'files');
+
             await client.query('BEGIN');
 
-            const {
-                make,
-                model,
-                year,
-                price,
-                mileage,
-                vin,
-                exterior_color,
-                interior_color,
-                transmission,
-                body_type,
-                description,
-                tags
-            } = vehicleData;
-
-            // 1. First check if make exists, if not create it
-            let makeResult = await client.query(
-                'SELECT make_id FROM VEHICLE_MAKES WHERE name = $1',
-                [make]
-            );
-
+            // 1. Get or create make and model
             let make_id;
-            if (makeResult.rows.length === 0) {
-                const newMake = await client.query(
-                    'INSERT INTO VEHICLE_MAKES (name) VALUES ($1) RETURNING make_id',
-                    [make]
-                );
-                make_id = newMake.rows[0].make_id;
-            } else {
-                make_id = makeResult.rows[0].make_id;
-            }
-
-            // 2. Check if model exists for this make, if not create it
-            let modelResult = await client.query(
-                'SELECT model_id FROM VEHICLE_MODELS WHERE make_id = $1 AND name = $2',
-                [make_id, model]
+            const makeResult = await client.query(
+                'INSERT INTO vehicle_makes (name) VALUES ($1) ON CONFLICT (name) DO UPDATE SET name = EXCLUDED.name RETURNING make_id',
+                [vehicleData.make]
             );
+            make_id = makeResult.rows[0].make_id;
 
             let model_id;
-            if (modelResult.rows.length === 0) {
-                const newModel = await client.query(
-                    'INSERT INTO VEHICLE_MODELS (make_id, name) VALUES ($1, $2) RETURNING model_id',
-                    [make_id, model]
-                );
-                model_id = newModel.rows[0].model_id;
-            } else {
-                model_id = modelResult.rows[0].model_id;
-            }
-
-            // 3. Insert the vehicle
-            const vehicleResult = await client.query(
-                `INSERT INTO VEHICLES (
-                    make_id, model_id, year, price, mileage, vin,
-                    exterior_color, interior_color, transmission,
-                    body_type, description, status
-                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'available')
-                RETURNING vehicle_id`,
-                [
-                    make_id, model_id, year, price, mileage, vin,
-                    exterior_color, interior_color, transmission,
-                    body_type, description
-                ]
+            const modelResult = await client.query(
+                'INSERT INTO vehicle_models (make_id, name) VALUES ($1, $2) ON CONFLICT (make_id, name) DO UPDATE SET name = EXCLUDED.name RETURNING model_id',
+                [make_id, vehicleData.model]
             );
+            model_id = modelResult.rows[0].model_id;
 
-            const vehicle_id = vehicleResult.rows[0].vehicle_id;
+            // 2. Insert into vehicles table
+            const insertVehicleQuery = `
+                INSERT INTO vehicles (
+                    vin, make_id, model_id, year, price, mileage, 
+                    exterior_color, interior_color, transmission, fuel_type, 
+                    engine, body_type, condition, status, description, 
+                    stock_number, location, is_featured
+                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
+                RETURNING vehicle_id, created_at, updated_at
+            `;
 
-            // 4. Handle tags if provided
-            if (tags && tags.length > 0) {
-                for (const tag of tags) {
-                    // Check if tag exists or create it
-                    let tagResult = await client.query(
-                        'SELECT tag_id FROM VEHICLE_TAGS WHERE name = $1',
-                        [tag]
+            const vehicleValues = [
+                vehicleData.vin || null,
+                make_id,
+                model_id,
+                vehicleData.year || null,
+                vehicleData.price || null,
+                vehicleData.mileage || null,
+                vehicleData.exterior_color || null,
+                vehicleData.interior_color || null,
+                vehicleData.transmission || null,
+                vehicleData.fuel_type || null,
+                vehicleData.engine || null,
+                vehicleData.body_type || null,
+                vehicleData.condition || null,
+                vehicleData.status || 'available',
+                vehicleData.description || null,
+                vehicleData.stock_number || null,
+                vehicleData.location || null,
+                vehicleData.is_featured === true
+            ];
+
+            console.log('Executing insertVehicleQuery with values:', vehicleValues);
+            const vehicleResult = await client.query(insertVehicleQuery, vehicleValues);
+            const newVehicle = vehicleResult.rows[0];
+
+            // 3. Handle tags
+            if (vehicleData.tags && Array.isArray(vehicleData.tags) && vehicleData.tags.length > 0) {
+                console.log('Processing tags:', vehicleData.tags);
+                for (const tagName of vehicleData.tags) {
+                    const tagResult = await client.query(
+                        'INSERT INTO vehicle_tags (name) VALUES ($1) ON CONFLICT (name) DO UPDATE SET name = EXCLUDED.name RETURNING tag_id',
+                        [tagName]
                     );
+                    const tagId = tagResult.rows[0].tag_id;
 
-                    let tag_id;
-                    if (tagResult.rows.length === 0) {
-                        const newTag = await client.query(
-                            'INSERT INTO VEHICLE_TAGS (name) VALUES ($1) RETURNING tag_id',
-                            [tag]
-                        );
-                        tag_id = newTag.rows[0].tag_id;
-                    } else {
-                        tag_id = tagResult.rows[0].tag_id;
-                    }
-
-                    // Create tag mapping
                     await client.query(
-                        'INSERT INTO VEHICLE_TAG_MAPPING (vehicle_id, tag_id) VALUES ($1, $2)',
-                        [vehicle_id, tag_id]
+                        'INSERT INTO vehicle_tag_mapping (vehicle_id, tag_id) VALUES ($1, $2) ON CONFLICT (vehicle_id, tag_id) DO NOTHING',
+                        [newVehicle.vehicle_id, tagId]
                     );
                 }
             }
 
-            // 5. Handle image uploads if provided
+            // 4. Handle images
             if (files && files.length > 0) {
-                // Upload all images to Firebase concurrently
-                const uploadPromises = files.map(file =>
-                    uploadToFirebase(file.buffer, file.originalname, file.mimetype)
-                );
-                const imageUrls = await Promise.all(uploadPromises);
-
-                // Create metadata for each image
-                const imageMetadata = files.map((file, index) => ({
-                    originalName: file.originalname,
-                    mimeType: file.mimetype,
-                    size: file.size,
-                    uploadedAt: new Date().toISOString(),
-                    url: imageUrls[index]
-                }));
-
-                // Insert into vehicle_images with array of URLs and metadata
+                console.log('Processing images:', files.length, 'files');
+                const imageUrls = await uploadToFirebase(files);
+                console.log('Uploaded image URLs:', imageUrls);
+                
                 await client.query(
-                    `INSERT INTO vehicle_images (
-                        vehicle_id,
-                        image_urls,
-                        image_metadata,
-                        primary_image_index
-                    ) VALUES ($1, $2, $3, $4)`,
-                    [
-                        vehicle_id,
-                        imageUrls,
-                        JSON.stringify(imageMetadata),
-                        0 // First image is primary by default
-                    ]
+                    `INSERT INTO vehicle_images (vehicle_id, image_urls)
+                     VALUES ($1, $2::text[])
+                     ON CONFLICT (vehicle_id) DO UPDATE 
+                     SET image_urls = array_cat(vehicle_images.image_urls, $2::text[]),
+                         updated_at = CURRENT_TIMESTAMP`,
+                    [newVehicle.vehicle_id, imageUrls]
                 );
             }
 
             await client.query('COMMIT');
-            return vehicle_id;
+
+            // Fetch the complete new vehicle data for response
+            const completeVehicleQuery = `
+                SELECT 
+                    v.*,
+                    vm.name as make,
+                    vmd.name as model,
+                    COALESCE(array_agg(DISTINCT vt.name) FILTER (WHERE vt.name IS NOT NULL), '{}'::text[]) as tags,
+                    COALESCE(vi.image_urls, '{}'::text[]) as images
+                FROM vehicles v
+                LEFT JOIN vehicle_makes vm ON v.make_id = vm.make_id
+                LEFT JOIN vehicle_models vmd ON v.model_id = vmd.model_id
+                LEFT JOIN vehicle_tag_mapping vtm ON v.vehicle_id = vtm.vehicle_id
+                LEFT JOIN vehicle_tags vt ON vtm.tag_id = vt.tag_id
+                LEFT JOIN vehicle_images vi ON v.vehicle_id = vi.vehicle_id
+                WHERE v.vehicle_id = $1
+                GROUP BY v.vehicle_id, vm.name, vmd.name, vi.image_urls
+            `;
+            
+            const completeVehicleResult = await client.query(completeVehicleQuery, [newVehicle.vehicle_id]);
+            const completeVehicle = completeVehicleResult.rows[0];
+
+            console.log('Vehicle added successfully. New Vehicle:', completeVehicle);
+
+            return {
+                success: true,
+                vehicle: completeVehicle
+            };
+
         } catch (error) {
             await client.query('ROLLBACK');
-            throw error;
+            console.error('Error in addVehicle model:', error);
+            return {
+                success: false,
+                error: error.message
+            };
         } finally {
             client.release();
         }
@@ -164,273 +156,212 @@ class InventoryModel {
     static async updateVehicle(vehicle_id, vehicleData, files) {
         const client = await pool.connect();
         try {
+            console.log('Starting vehicle update transaction for ID:', vehicle_id);
+            console.log('Vehicle data received for update:', JSON.stringify(vehicleData, null, 2));
+            console.log('Files received for update:', files);
+
             await client.query('BEGIN');
 
-            // 1. Check if vehicle exists
-            const vehicleCheck = await client.query(
-                'SELECT vehicle_id FROM vehicles WHERE vehicle_id = $1',
-                [vehicle_id]
-            );
-
-            if (vehicleCheck.rows.length === 0) {
-                throw new Error('Vehicle not found');
-            }
-
-            const {
-                make,
-                model,
-                year,
-                price,
-                mileage,
-                vin,
-                exterior_color,
-                interior_color,
-                transmission,
-                fuel_type,
-                engine,
-                condition,
-                features,
-                is_featured,
-                status,
-                description,
-                tags
-            } = vehicleData;
-
-
-            // 2. Handle make and model updates if provided
+            // 1. Get or create make and model
             let make_id;
-            let model_id; // Initialize model_id here
-            if (make) {
-                const makeResult = await client.query(
-                    'SELECT make_id FROM vehicle_makes WHERE name = $1',
-                    [make]
-                );
-                if (makeResult.rows.length === 0) {
-                    const newMake = await client.query(
-                        'INSERT INTO vehicle_makes (name) VALUES ($1) RETURNING make_id',
-                        [make]
-                    );
-                    make_id = newMake.rows[0].make_id;
-                } else {
-                    make_id = makeResult.rows[0].make_id;
+            const makeResult = await client.query(
+                'INSERT INTO vehicle_makes (name) VALUES ($1) ON CONFLICT (name) DO UPDATE SET name = EXCLUDED.name RETURNING make_id',
+                [vehicleData.make]
+            );
+            make_id = makeResult.rows[0].make_id;
+
+            let model_id;
+            const modelResult = await client.query(
+                'INSERT INTO vehicle_models (make_id, name) VALUES ($1, $2) ON CONFLICT (make_id, name) DO UPDATE SET name = EXCLUDED.name RETURNING model_id',
+                [make_id, vehicleData.model]
+            );
+            model_id = modelResult.rows[0].model_id;
+
+            // Validate transmission if provided
+            if (vehicleData.transmission) {
+                const validTransmissions = ['automatic', 'manual', 'cvt', 'semi_automatic'];
+                const transmissionValue = vehicleData.transmission.toLowerCase();
+                if (!validTransmissions.includes(transmissionValue)) {
+                    throw new Error(`Invalid transmission type. Must be one of: ${validTransmissions.join(', ')}`);
                 }
             }
 
-            if (model && make_id) { // Ensure make_id is available if model is provided
-                const modelResult = await client.query(
-                    'SELECT model_id FROM vehicle_models WHERE make_id = $1 AND name = $2',
-                    [make_id, model]
-                );
-                if (modelResult.rows.length === 0) {
-                    const newModel = await client.query(
-                        'INSERT INTO vehicle_models (make_id, name) VALUES ($1, $2) RETURNING model_id',
-                        [make_id, model]
-                    );
-                    model_id = newModel.rows[0].model_id;
-                } else {
-                    model_id = modelResult.rows[0].model_id;
+            // Validate fuel_type if provided
+            if (vehicleData.fuel_type) {
+                const validFuelTypes = ['gasoline', 'diesel', 'electric', 'hybrid', 'plug_in_hybrid'];
+                const fuelTypeValue = vehicleData.fuel_type.toLowerCase();
+                if (!validFuelTypes.includes(fuelTypeValue)) {
+                    throw new Error(`Invalid fuel type. Must be one of: ${validFuelTypes.join(', ')}`);
                 }
-            } else if (model && !make_id) {
-                // If model is provided but make_id is not (meaning make wasn't updated),
-                // we need to get the existing make_id for the vehicle to correctly associate the model.
-                const currentVehicleMake = await client.query(
-                    'SELECT make_id FROM vehicles WHERE vehicle_id = $1',
-                    [vehicle_id]
-                );
-                if (currentVehicleMake.rows.length > 0) {
-                    make_id = currentVehicleMake.rows[0].make_id;
-                    const modelResult = await client.query(
-                        'SELECT model_id FROM vehicle_models WHERE make_id = $1 AND name = $2',
-                        [make_id, model]
-                    );
-                    if (modelResult.rows.length === 0) {
-                        const newModel = await client.query(
-                            'INSERT INTO vehicle_models (make_id, name) VALUES ($1, $2) RETURNING model_id',
-                            [make_id, model]
-                        );
-                        model_id = newModel.rows[0].model_id;
-                    } else {
-                        model_id = modelResult.rows[0].model_id;
-                    }
-                }
+                // Update the fuel_type value to ensure it's lowercase
+                vehicleData.fuel_type = fuelTypeValue;
             }
 
-
-            // 3. Update vehicle basic details
-            const updateFields = [];
-            const updateValues = [];
-            let valueCounter = 1;
-
-            const addUpdateField = (field, value) => {
-                // Only add to update if the value is explicitly provided in the update payload
-                // and not undefined, allowing nulls to be set if intended.
-                if (value !== undefined) {
-                    updateFields.push(`${field} = $${valueCounter}`);
-                    updateValues.push(value);
-                    valueCounter++;
+            // Validate condition if provided
+            if (vehicleData.condition) {
+                console.log('Received condition value:', vehicleData.condition, 'Type:', typeof vehicleData.condition);
+                const validConditions = ['new', 'used', 'certified_pre_owned', 'excellent', 'good', 'fair'];
+                // Ensure condition is a string and not an array
+                const conditionValue = Array.isArray(vehicleData.condition) 
+                    ? String(vehicleData.condition[0]).toLowerCase()
+                    : String(vehicleData.condition).toLowerCase();
+                
+                if (!validConditions.includes(conditionValue)) {
+                    throw new Error(`Invalid condition. Must be one of: ${validConditions.join(', ')}`);
                 }
-            };
-
-            addUpdateField('make_id', make_id);
-            addUpdateField('model_id', model_id);
-            addUpdateField('year', year);
-            addUpdateField('price', price);
-            addUpdateField('mileage', mileage);
-            addUpdateField('exterior_color', exterior_color);
-            addUpdateField('interior_color', interior_color);
-            addUpdateField('transmission', transmission);
-            addUpdateField('fuel_type', fuel_type);
-            addUpdateField('engine', engine);
-            addUpdateField('vin', vin);
-            addUpdateField('condition', condition);
-            addUpdateField('is_featured', is_featured);
-            addUpdateField('status', status);
-            addUpdateField('updated_at', new Date());
-            addUpdateField('description', description);
-
-            if (updateFields.length > 0) {
-                const updateQuery = `
-                    UPDATE vehicles
-                    SET ${updateFields.join(', ')}
-                    WHERE vehicle_id = $${valueCounter}
-                `;
-                updateValues.push(vehicle_id);
-                await client.query(updateQuery, updateValues);
+                // Update the condition value to ensure it's lowercase
+                vehicleData.condition = conditionValue;
             }
 
-            // 4. Handle features update if provided
-            if (features !== undefined) { // Check if features array is provided
-                // Remove existing feature mappings
-                await client.query(
-                    'DELETE FROM vehicle_feature_mapping WHERE vehicle_id = $1',
-                    [vehicle_id]
-                );
+            // 2. Update vehicle
+            const updateVehicleQuery = `
+                UPDATE vehicles
+                SET 
+                    make_id = $1,
+                    model_id = $2,
+                    year = $3,
+                    price = $4,
+                    mileage = $5,
+                    vin = $6,
+                    exterior_color = $7,
+                    interior_color = $8,
+                    transmission = CASE 
+                        WHEN $9::text = '' THEN transmission
+                        WHEN $9::text IS NULL THEN transmission
+                        ELSE $9::transmission_type
+                    END,
+                    fuel_type = CASE 
+                        WHEN $10::text = '' THEN fuel_type
+                        WHEN $10::text IS NULL THEN fuel_type
+                        ELSE $10::fuel_type
+                    END,
+                    engine = $11,
+                    body_type = $12,
+                    condition = CASE 
+                        WHEN $13::text = '' THEN condition
+                        WHEN $13::text IS NULL THEN condition
+                        ELSE $13::vehicle_condition
+                    END,
+                    status = $14,
+                    description = $15,
+                    stock_number = $16,
+                    location = $17,
+                    is_featured = $18,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE vehicle_id = $19
+                RETURNING *
+            `;
 
-                // Add new features
-                const processedFeatures = new Set();
-                for (const feature of features) {
-                    if (processedFeatures.has(feature)) continue;
-                    processedFeatures.add(feature);
+            const vehicleValues = [
+                make_id,
+                model_id,
+                vehicleData.year,
+                vehicleData.price,
+                vehicleData.mileage,
+                vehicleData.vin,
+                vehicleData.exterior_color || null,
+                vehicleData.interior_color || null,
+                vehicleData.transmission || null,
+                vehicleData.fuel_type || null,
+                vehicleData.engine || null,
+                vehicleData.body_type || null,
+                vehicleData.condition || null,
+                vehicleData.status || 'available',
+                vehicleData.description || null,
+                vehicleData.stock_number || null,
+                vehicleData.location || null,
+                vehicleData.is_featured === true,
+                vehicle_id
+            ];
 
-                    let featureResult = await client.query(
-                        'SELECT feature_id FROM vehicle_features WHERE name = $1',
-                        [feature]
-                    );
+            console.log('Executing updateVehicle query with values:', vehicleValues);
+            const vehicleResult = await client.query(updateVehicleQuery, vehicleValues);
+            const updatedVehicle = vehicleResult.rows[0];
 
-                    let feature_id;
-                    if (featureResult.rows.length === 0) {
-                        const newFeature = await client.query(
-                            'INSERT INTO vehicle_features (name) VALUES ($1) RETURNING feature_id',
-                            [feature]
-                        );
-                        feature_id = newFeature.rows[0].feature_id;
-                    } else {
-                        feature_id = featureResult.rows[0].feature_id;
-                    }
-
-                    await client.query(
-                        'INSERT INTO vehicle_feature_mapping (vehicle_id, feature_id) VALUES ($1, $2)',
-                        [vehicle_id, feature_id]
-                    );
-                }
-            }
-
-            // 5. Handle image updates if new files are provided
-            if (files && files.length > 0) {
-                // Fetch current image URLs
-                const currentImages = await client.query(
-                    'SELECT image_urls FROM vehicle_images WHERE vehicle_id = $1',
-                    [vehicle_id]
-                );
-
-                if (currentImages.rows.length > 0 && currentImages.rows[0].image_urls) {
-                    const oldImageUrls = currentImages.rows[0].image_urls;
-
-                    // Delete each old image from Firebase
-                    for (const url of oldImageUrls) {
-                        await deleteFromFirebase(url);
-                    }
-
-                    // Delete existing image records from the DB
-                    await client.query(
-                        'DELETE FROM vehicle_images WHERE vehicle_id = $1',
-                        [vehicle_id]
-                    );
-                }
-
-                // Upload new images
-                const uploadPromises = files.map(file =>
-                    uploadToFirebase(file.buffer, file.originalname, file.mimetype)
-                );
-                const uploadedImageUrls = await Promise.all(uploadPromises);
-
-                // Create metadata for each new image
-                const newImageMetadata = files.map((file, index) => ({
-                    originalName: file.originalname,
-                    mimeType: file.mimetype,
-                    size: file.size,
-                    uploadedAt: new Date().toISOString(),
-                    url: uploadedImageUrls[index]
-                }));
-
-                // Insert new image URLs and metadata into DB
-                await client.query(
-                    `INSERT INTO vehicle_images (
-                        vehicle_id,
-                        image_urls,
-                        image_metadata,
-                        primary_image_index
-                    ) VALUES ($1, $2, $3, $4)`,
-                    [
-                        vehicle_id,
-                        uploadedImageUrls,
-                        JSON.stringify(newImageMetadata),
-                        0 // First image is primary by default for new uploads
-                    ]
-                );
-            }
-
-            // 6. Handle tags update if provided
-            if (tags !== undefined) { // Check if tags array is provided
-                // Remove existing tag mappings
+            // 3. Handle tags
+            if (vehicleData.tags && Array.isArray(vehicleData.tags)) {
+                console.log('Processing tags:', vehicleData.tags);
+                
+                // First, remove all existing tag mappings for this vehicle
                 await client.query(
                     'DELETE FROM vehicle_tag_mapping WHERE vehicle_id = $1',
                     [vehicle_id]
                 );
-
-                // Add new tags
-                const processedTags = new Set();
-                for (const tag of tags) {
-                    if (processedTags.has(tag)) continue;
-                    processedTags.add(tag);
-
-                    let tagResult = await client.query(
-                        'SELECT tag_id FROM vehicle_tags WHERE name = $1',
-                        [tag]
+                
+                // Then insert new tag mappings
+                for (const tagName of vehicleData.tags) {
+                    // First ensure the tag exists
+                    const tagResult = await client.query(
+                        'INSERT INTO vehicle_tags (name) VALUES ($1) ON CONFLICT (name) DO UPDATE SET name = EXCLUDED.name RETURNING tag_id',
+                        [tagName]
                     );
+                    const tagId = tagResult.rows[0].tag_id;
 
-                    let tag_id;
-                    if (tagResult.rows.length === 0) {
-                        const newTag = await client.query(
-                            'INSERT INTO vehicle_tags (name) VALUES ($1) RETURNING tag_id',
-                            [tag]
-                        );
-                        tag_id = newTag.rows[0].tag_id;
-                    } else {
-                        tag_id = tagResult.rows[0].tag_id;
-                    }
-
+                    // Then create the mapping
                     await client.query(
-                        'INSERT INTO vehicle_tag_mapping (vehicle_id, tag_id) VALUES ($1, $2)',
-                        [vehicle_id, tag_id]
+                        'INSERT INTO vehicle_tag_mapping (vehicle_id, tag_id) VALUES ($1, $2) ON CONFLICT (vehicle_id, tag_id) DO NOTHING',
+                        [vehicle_id, tagId]
                     );
                 }
             }
 
+            // 4. Handle images
+            if (files && files.length > 0) {
+                // Upload new images to Firebase
+                const imageUrls = await uploadToFirebase(files);
+                
+                // Update vehicle_images table
+                await client.query(
+                    `INSERT INTO vehicle_images (vehicle_id, image_urls)
+                     VALUES ($1, $2)
+                     ON CONFLICT (vehicle_id) 
+                     DO UPDATE SET 
+                        image_urls = CASE 
+                            WHEN vehicle_images.image_urls IS NULL THEN $2
+                            ELSE array_cat(vehicle_images.image_urls, $2)
+                        END,
+                        updated_at = CURRENT_TIMESTAMP`,
+                    [vehicle_id, imageUrls]
+                );
+            }
+
             await client.query('COMMIT');
+
+            // Get the complete updated vehicle data
+            const completeVehicleQuery = `
+                SELECT 
+                    v.*,
+                    vm.name as make,
+                    vmd.name as model,
+                    COALESCE(array_agg(DISTINCT vt.name) FILTER (WHERE vt.name IS NOT NULL), '{}'::text[]) as tags,
+                    COALESCE(vi.image_urls, '{}'::text[]) as images
+                FROM vehicles v
+                LEFT JOIN vehicle_makes vm ON v.make_id = vm.make_id
+                LEFT JOIN vehicle_models vmd ON v.model_id = vmd.model_id
+                LEFT JOIN vehicle_tag_mapping vtm ON v.vehicle_id = vtm.vehicle_id
+                LEFT JOIN vehicle_tags vt ON vtm.tag_id = vt.tag_id
+                LEFT JOIN vehicle_images vi ON v.vehicle_id = vi.vehicle_id
+                WHERE v.vehicle_id = $1
+                GROUP BY v.vehicle_id, vm.name, vmd.name, vi.image_urls
+            `;
+            
+            const completeVehicleResult = await client.query(completeVehicleQuery, [vehicle_id]);
+            const completeVehicle = completeVehicleResult.rows[0];
+
+            console.log('Vehicle update completed successfully. Updated Vehicle:', completeVehicle);
+
+            return {
+                success: true,
+                vehicle: completeVehicle
+            };
+
         } catch (error) {
             await client.query('ROLLBACK');
-            throw error;
+            console.error('Error in updateVehicle model:', error);
+            return {
+                success: false,
+                error: error.message
+            };
         } finally {
             client.release();
         }

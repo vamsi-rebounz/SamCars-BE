@@ -1,6 +1,9 @@
-const { validateVehicleData } = require('../validators/vehicleValidator');
+const express = require('express');
+const multer = require('multer');
+const inventoryModel = require('../models/inventoryModel');
 const { buildWhereClauseForInventory } = require('../helpers/inventoryHelper');
-const InventoryModel = require('../models/inventoryModel'); // Import the new model
+const InventoryModel = require('../models/inventoryModel');
+const db = require('../config/db');
 
 class InventoryController {
     /**
@@ -10,43 +13,61 @@ class InventoryController {
      */
     static async addVehicle(req, res) {
         try {
-            const vehicleData = {
-                make: req.body.make,
-                model: req.body.model,
-                year: parseInt(req.body.year),
-                price: parseFloat(req.body.price),
-                mileage: req.body.mileage ? parseInt(req.body.mileage) : null,
-                vin: req.body.vin,
-                exterior_color: req.body.exterior_color,
-                interior_color: req.body.interior_color,
-                transmission: req.body.transmission,
-                body_type: req.body.body_type,
-                description: req.body.description,
-                status: req.body.status,
-                tags: req.body.tags ? (typeof req.body.tags === 'string' ? JSON.parse(req.body.tags) : req.body.tags) : []
-            };
-
-            console.log('Received vehicle data:', vehicleData);
-            console.log('Received files:', req.files);
-
-            // Validate request data
-            const validationError = validateVehicleData(vehicleData);
-            if (validationError) {
-                return res.status(400).json({ error: validationError });
-            }
-
-            const vehicle_id = await InventoryModel.addVehicle(vehicleData, req.files);
-
-            res.status(201).json({
-                message: 'Vehicle added successfully',
-                vehicle_id: vehicle_id
+            console.log('Received add vehicle request:', {
+                body: req.body,
+                files: req.files
             });
 
+            // Check for duplicate VIN
+            const existingVehicle = await db.query(
+                'SELECT * FROM vehicles WHERE vin = $1',
+                [req.body.vin]
+            );
+
+            if (existingVehicle.rows.length > 0) {
+                console.log('Duplicate VIN detected:', req.body.vin);
+                return res.status(400).json({
+                    status: 'error',
+                    message: 'A vehicle with this VIN already exists.',
+                    error: 'duplicate_vin'
+                });
+            }
+
+            // Process vehicle data
+            const vehicleData = {
+                ...req.body,
+                price: parseFloat(req.body.price) || 0,
+                mileage: parseInt(req.body.mileage) || 0,
+                year: parseInt(req.body.year) || new Date().getFullYear(),
+                is_featured: req.body.is_featured === 'true',
+                images: req.files ? req.files.map(file => file) : []
+            };
+
+            console.log('Processed vehicle data for add vehicle:', vehicleData);
+
+            const result = await InventoryModel.addVehicle(vehicleData, req.files);
+            
+            if (result.success) {
+                res.status(201).json({
+                    status: 'success',
+                    message: 'Vehicle added successfully',
+                    vehicle: result.vehicle
+                });
+            } else {
+                console.error('Error adding vehicle to model:', result.error);
+                res.status(500).json({
+                    status: 'error',
+                    message: 'Failed to add vehicle.',
+                    error: result.error
+                });
+            }
         } catch (error) {
-            console.error('Error adding vehicle:', error);
+            console.error('Error in addVehicle controller:', error);
             res.status(500).json({
-                error: 'Failed to add vehicle',
-                details: error.message
+                status: 'error',
+                message: 'Failed to add vehicle.',
+                error: error.message,
+                details: error.stack
             });
         }
     }
@@ -58,54 +79,73 @@ class InventoryController {
      */
     static async updateVehicle(req, res) {
         try {
-            const { id } = req.query;
-
-            const vehicleData = {
-                make: req.body.make,
-                model: req.body.model,
-                year: req.body.year ? parseInt(req.body.year) : undefined,
-                price: req.body.price ? parseFloat(req.body.price) : undefined,
-                mileage: req.body.mileage ? parseInt(req.body.mileage) : undefined,
-                vin: req.body.vin,
-                exterior_color: req.body.exterior_color,
-                interior_color: req.body.interior_color,
-                transmission: req.body.transmission,
-                fuel_type: req.body.fuel_type,
-                engine: req.body.engine,
-                condition: req.body.condition,
-                features: req.body.features ? JSON.parse(req.body.features) : undefined,
-                is_featured: req.body.is_featured !== undefined ? (req.body.is_featured === 'true') : undefined, // Convert string to boolean
-                status: req.body.status,
-                description: req.body.description,
-                tags: req.body.tags ? JSON.parse(req.body.tags) : undefined
-            };
-
-            // You might want to add a validation check here specifically for updates if needed.
-            // const validationError = validateVehicleData(vehicleData);
-            // if (validationError) {
-            //     return res.status(400).json({ error: validationError });
-            // }
-
-            await InventoryModel.updateVehicle(id, vehicleData, req.files);
-
-            res.status(200).json({
-                status: 'success',
-                message: 'Vehicle updated successfully',
-                vehicle_id: id
+            const vehicleId = req.params.id;
+            console.log('Received update vehicle request:', {
+                id: vehicleId,
+                body: req.body,
+                files: req.files
             });
 
-        } catch (error) {
-            console.error('Error updating vehicle:', error);
-            let statusCode = 500;
-            let message = 'Failed to update vehicle';
-            if (error.message === 'Vehicle not found') {
-                statusCode = 404;
-                message = error.message;
+            // Process vehicle data
+            const vehicleData = {
+                ...req.body,
+                price: parseFloat(req.body.price) || 0,
+                mileage: parseInt(req.body.mileage) || 0,
+                year: parseInt(req.body.year) || new Date().getFullYear(),
+                is_featured: req.body.is_featured === 'true',
+                // Ensure fuel_type is a single string, even if parsed as an array
+                fuel_type: Array.isArray(req.body.fuel_type) ? req.body.fuel_type[0] : req.body.fuel_type,
+                // Ensure condition is a single string, even if parsed as an array
+                condition: Array.isArray(req.body.condition) ? req.body.condition[0] : req.body.condition,
+                // Ensure tags are an array of strings
+                tags: Array.isArray(req.body.tags) ? req.body.tags : (req.body.tags ? [req.body.tags] : []),
+                images: req.files ? req.files.map(file => file) : []
+            };
+
+            // If there are existing images in the request, add them to the images array
+            if (req.body.existingImages) {
+                const existingImages = Array.isArray(req.body.existingImages) 
+                    ? req.body.existingImages 
+                    : [req.body.existingImages];
+                vehicleData.images = [...existingImages, ...vehicleData.images];
             }
-            res.status(statusCode).json({
+
+            console.log('Processed update vehicle data:', vehicleData);
+            console.log('Specific fields in controller: ', {
+                exterior_color: vehicleData.exterior_color,
+                interior_color: vehicleData.interior_color,
+                fuel_type: vehicleData.fuel_type,
+                engine: vehicleData.engine,
+                body_type: vehicleData.body_type,
+                condition: vehicleData.condition,
+                stock_number: vehicleData.stock_number,
+                location: vehicleData.location,
+                is_featured: vehicleData.is_featured
+            });
+
+            const result = await InventoryModel.updateVehicle(vehicleId, vehicleData, req.files);
+            
+            if (result.success) {
+                res.status(200).json({
+                    status: 'success',
+                    message: 'Vehicle updated successfully',
+                    vehicle: result.vehicle
+                });
+            } else {
+                console.error('Error updating vehicle in model:', result.error);
+                res.status(500).json({
+                    status: 'error',
+                    message: 'Failed to update vehicle.',
+                    error: result.error
+                });
+            }
+        } catch (error) {
+            console.error('Error in updateVehicle controller:', error);
+            res.status(500).json({
                 status: 'error',
-                message: message,
-                details: error.message
+                message: 'Failed to update vehicle.',
+                error: error.message,
+                details: error.stack
             });
         }
     }

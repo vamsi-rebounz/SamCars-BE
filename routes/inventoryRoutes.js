@@ -16,7 +16,7 @@ router.post(
 
 // Update vehicle
 router.put(
-    '/vehicles/update',
+    '/vehicles/update/:id',
     upload.array('images', 10),
     handleMulterError,
     // authenticateToken,
