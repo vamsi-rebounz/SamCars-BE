@@ -3,7 +3,7 @@ const AuctionVehicle = require('../models/auctionModel');
 const { upload, handleMulterError } = require('../middleware/multerMiddleware');
 const pool = require('../config/db');
 const { validateVehicleData } = require('../validators/vehicleValidator');
-
+const { VEHICLE_STATUSES } = require('../constants/enums');
 class AuctionController {
     
   static async addAuctionPurchase(req, res) {
@@ -72,6 +72,86 @@ class AuctionController {
       } finally {
           client.release(); // Always release the client
       }
+    };
+
+    static async getAuctionVehicles(req, res) {
+        try {
+            // Parse query parameters with default values
+            const limit = parseInt(req.query.limit) || 10;
+            const page = parseInt(req.query.page) || 1;
+            const search = req.query.search ? String(req.query.search).trim() : null;
+            const sortBy = req.query.sort_by ? String(req.query.sort_by).trim() : 'purchaseDate';
+            const sortOrder = req.query.sort_order ? String(req.query.sort_order).trim().toUpperCase() : 'DESC';
+            const status = req.query.status ? String(req.query.status).trim() : null;
+    
+            const offset = (page - 1) * limit;
+    
+            // Basic validation for parameters
+            if (limit <= 0 || page <= 0) {
+                return res.status(400).json({ status: "error", message: "Limit and page must be positive integers." });
+            }
+            if (sortOrder !== 'ASC' && sortOrder !== 'DESC') {
+                return res.status(400).json({ status: "error", message: "sort_order must be 'asc' or 'desc'." });
+            }
+            if (status && !VEHICLE_STATUSES.includes(status)) {
+                 return res.status(400).json({
+                    status: "error",
+                    message: `Invalid status: ${status}. Allowed: ${VEHICLE_STATUSES.join(', ')}`
+                });
+            }
+    
+    
+            const { vehicles, totalItems } = await AuctionVehicle.fetchAuctionVehicles({
+                limit,
+                offset,
+                search,
+                sortBy,
+                sortOrder,
+                status
+            });
+    
+            const totalPages = Math.ceil(totalItems / limit);
+            const hasNext = page < totalPages;
+            const hasPrev = page > 1;
+    
+            // Format the response according to the specified structure
+            const formattedVehicles = vehicles.map(vehicle => ({
+                id: vehicle.id.toString(),
+                make: vehicle.make,
+                model: vehicle.model,
+                year: vehicle.year.toString(),
+                vin: vehicle.vin,
+                purchaseDate: vehicle.purchaseDate.toISOString().split('T')[0], // Format date as YYYY-MM-DD
+                // Convert string numbers to float before calling toFixed, handle nulls
+                purchasePrice: vehicle.purchasePrice ? parseFloat(vehicle.purchasePrice).toFixed(2) : null,
+                totalInvestment: vehicle.totalInvestment ? parseFloat(vehicle.totalInvestment).toFixed(2) : null,
+                listPrice: vehicle.listPrice ? parseFloat(vehicle.listPrice).toFixed(2) : null,
+                soldPrice: vehicle.soldPrice ? parseFloat(vehicle.soldPrice).toFixed(2) : null,
+                status: vehicle.status,
+                profit: vehicle.profit ? parseFloat(vehicle.profit).toFixed(2) : null,
+                createdAt: vehicle.createdAt.toISOString(),
+                updatedAt: vehicle.updatedAt.toISOString(),
+                imageUrls: vehicle.imageUrls || []
+            }));
+    
+            res.status(200).json({
+                status: "success",
+                data: {
+                    vehicles: formattedVehicles,
+                    pagination: {
+                        currentPage: page.toString(),
+                        totalPages: totalPages.toString(),
+                        totalItems: totalItems.toString(),
+                        hasNext: hasNext.toString(),
+                        hasPrev: hasPrev.toString()
+                    }
+                }
+            });
+    
+        } catch (error) {
+            console.error('Error in getAuctionVehicles controller:', error);
+            res.status(500).json({ status: "error", message: error.message || "Failed to fetch auction vehicles." });
+        }
     };
 }
 
