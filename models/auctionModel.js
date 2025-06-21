@@ -111,8 +111,8 @@ class AuctionModel {
 
         // Add status filter
         if (status) {
-            if (!VEHICLE_STATUSES.includes(status)) {
-                throw new Error(`Invalid status: ${status}. Allowed: ${VEHICLE_STATUSES.join(', ')}`);
+            if (!Object.values(VEHICLE_STATUSES).includes(status)) {
+                throw new Error(`Invalid status: ${status}. Allowed: ${Object.values(VEHICLE_STATUSES).join(', ')}`);
             }
             whereClause.push(`av.status = $${paramIndex++}`);
             queryParams.push(status);
@@ -212,8 +212,8 @@ class AuctionModel {
         const client = await pool.connect();
         try {
             // Basic validation for status if provided
-            if (status && !VEHICLE_STATUSES.includes(status)) {
-                throw new Error(`Invalid status: ${status}. Allowed statuses are: ${VEHICLE_STATUSES.join(', ')}`);
+            if (status && !Object.values(VEHICLE_STATUSES).includes(status)) {
+                throw new Error(`Invalid status: ${status}. Allowed statuses are: ${Object.values(VEHICLE_STATUSES).join(', ')}`);
             }
 
             // Query to get total investment and vehicles purchased

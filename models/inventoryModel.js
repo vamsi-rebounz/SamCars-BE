@@ -32,7 +32,8 @@ class InventoryModel {
                 status = 'available', // Default to 'available' if not provided
                 tags = [],
                 features = [],
-                carfax_link = null // Default to null if not provided
+                carfax_link = null, // Default to null if not provided
+                fuel_type,
             } = vehicleData;
     
             // 1. First check if make exists, if not create it
@@ -74,13 +75,13 @@ class InventoryModel {
                 `INSERT INTO VEHICLES (
                     make_id, model_id, year, price, mileage, vin,
                     exterior_color, interior_color, transmission,
-                    body_type, description, condition, status, carfax_link
-                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+                    body_type, description, condition, status, carfax_link, fuel_type
+                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
                 RETURNING vehicle_id`,
                 [
                     make_id, model_id, year, price, mileage, vin,
                     exterior_color, interior_color, transmission,
-                    body_type, description, condition, status, carfax_link
+                    body_type, description, condition, status, carfax_link, fuel_type
                 ]
             );
     

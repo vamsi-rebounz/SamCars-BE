@@ -5,7 +5,12 @@ const pool = require('../config/db');
 const { validateVehicleData } = require('../validators/vehicleValidator');
 const { VEHICLE_STATUSES } = require('../constants/enums');
 class AuctionController {
-    
+    /**
+     * Creates a new auction purchase
+     * @param {object} req - Express request object
+     * @param {object} res - Express response object
+     * @returns 
+     */
     static async addAuctionPurchase(req, res) {
       const client = await pool.connect(); // Get a client from the pool
       try {
@@ -74,6 +79,12 @@ class AuctionController {
       }
     };
 
+    /**
+     * Fetches a list of vehicles that are currently in an auction.
+     * @param {reque} req - Express request object
+     * @param {res} res - Express response object
+     * @returns 
+     */
     static async getAuctionVehicles(req, res) {
         try {
             // Parse query parameters with default values
@@ -93,10 +104,10 @@ class AuctionController {
             if (sortOrder !== 'ASC' && sortOrder !== 'DESC') {
                 return res.status(400).json({ status: "error", message: "sort_order must be 'asc' or 'desc'." });
             }
-            if (status && !VEHICLE_STATUSES.includes(status)) {
+            if (status && !Object.values(VEHICLE_STATUSES).includes(status)) {
                  return res.status(400).json({
                     status: "error",
-                    message: `Invalid status: ${status}. Allowed: ${VEHICLE_STATUSES.join(', ')}`
+                    message: `Invalid status: ${status}. Allowed: ${Object.values(VEHICLE_STATUSES).join(', ')}`
                 });
             }
     
@@ -155,11 +166,10 @@ class AuctionController {
     };
 
     /**
-     * Fetches summary statistics for the auction dashboard.
-     * Query params:
-     * - `date_from` (optional): Start date (YYYY-MM-DD). Defaults to '1900-01-01' if not provided.
-     * - `date_to` (optional): End date (YYYY-MM-DD). Defaults to current date if not provided.
-     * - `status` (optional): Filter by vehicle status (e.g., 'sold', 'auction').
+     * Fetches auction dashboard summary statistics.
+     * @param {Object} req - Express request object
+     * @param {Object} res - Express response object
+     * @returns 
      */
     static async getAuctionDashboardSummary(req, res) {
         try {
@@ -196,10 +206,10 @@ class AuctionController {
             }
 
             // Validate status if provided against your enum
-            if (status && !VEHICLE_STATUSES.includes(status)) {
+            if (status && !Object.values(VEHICLE_STATUSES).includes(status)) {
                  return res.status(400).json({
                     status: "error",
-                    message: `Invalid status: ${status}. Allowed statuses are: ${VEHICLE_STATUSES.join(', ')}`
+                    message: `Invalid status: ${status}. Allowed statuses are: ${!Object.values(VEHICLE_STATUSES).join(', ')}`
                 });
             }
 

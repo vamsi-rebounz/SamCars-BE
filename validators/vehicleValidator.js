@@ -1,4 +1,10 @@
 const { URL } = require('url');
+const { 
+    VEHICLE_STATUSES,
+    VEHICLE_CONDITIONS,
+    FUEL_TYPES,
+    TRANSMISSION_TYPES,
+    BODY_TYPES  } = require('../constants/enums');
 
 /**
  * Validates vehicle data before insertion
@@ -19,6 +25,7 @@ function validateVehicleData(data) {
         status,
         carfax_link,
         features,
+        fuel_type,
     } = data;
 
     // Required fields
@@ -58,25 +65,25 @@ function validateVehicleData(data) {
     }
 
     // Validate status and condition against enum types
-    const validTransmissions = ['automatic', 'manual', 'cvt', 'semi_automatic'];
+    const validTransmissions = Object.values(TRANSMISSION_TYPES);
     if (!validTransmissions.includes(transmission)) {
         return 'Invalid transmission type';
     }
 
     // Validate body type against enum types
-    const validBodyTypes = ['sedan', 'suv', 'truck', 'coupe', 'convertible', 'hatchback', 'minivan', 'van'];
+    const validBodyTypes = Object.values(BODY_TYPES);
     if (!validBodyTypes.includes(body_type)) {
         return 'Invalid body type';
     }
 
     // Validate vehicle conditions against enum types
-    const validConditions = ['new', 'used', 'certified_pre_owned', 'excellent', 'good', 'fair'];
+    const validConditions = Object.values(VEHICLE_CONDITIONS);
     if (!validConditions.includes(condition)) {
         throw new Error('Invalid vehicle status');
     }
 
     // Valid vehicle statues against enum types
-    const validStatuses = ['available', 'sold', 'pending', 'maintenance', 'auction'];
+    const validStatuses = Object.values(VEHICLE_STATUSES);
     if (!validStatuses.includes(status)) {
         throw new Error('Invalid vehicle condition');
     }

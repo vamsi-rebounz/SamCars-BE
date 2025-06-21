@@ -21,6 +21,7 @@ class InventoryController {
                 interior_color: req.body.interior_color,
                 transmission: req.body.transmission,
                 body_type: req.body.body_type,
+                fuel_type: req.body.fuel_type,
                 description: req.body.description,
                 status: req.body.status,
                 condition : req.body.condition,
