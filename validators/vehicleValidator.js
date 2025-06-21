@@ -88,6 +88,12 @@ function validateVehicleData(data) {
         throw new Error('Invalid vehicle condition');
     }
 
+    // Validate fuel type
+    const validFuelTypes = Object.values(FUEL_TYPES);
+    if (!validFuelTypes.includes(fuel_type)) {
+        throw new Error('Invalid fuel type');
+    }
+
     // Validate Carfax link if provided
     if (carfax_link && !isSafeURL(carfax_link)) {
         throw new Error('Invalid Carfax link URL');

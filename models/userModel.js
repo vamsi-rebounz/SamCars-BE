@@ -107,6 +107,6 @@ const UserModel = {
             throw new Error('Could not fetch user by email.');
         }
     }
-};
+}; 
 
 module.exports = UserModel;

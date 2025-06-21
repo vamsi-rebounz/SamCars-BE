@@ -5,7 +5,7 @@ const { authenticateToken, isAdmin } = require('../middleware/authMiddleware');
 const { upload, handleMulterError } = require('../middleware/multerMiddleware');
 const router = express.Router();
 
-// Public Routes
+// * Admin authorized routes *
 router.post('/vehicles/add-new',
     upload.array('images', 10),
     // authenticateToken,

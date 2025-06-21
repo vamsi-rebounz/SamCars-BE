@@ -3,7 +3,9 @@ const router = express.Router();
 const InventoryController = require('../controllers/inventoryController');
 const { authenticateToken, isAdmin } = require('../middleware/authMiddleware');
 const { upload, handleMulterError } = require('../middleware/multerMiddleware');
-// Inventory routes starts here
+
+// * Inventory routes starts here *
+// * Admin authorized routes *
 // Add vehicle
 router.post(
     '/add-vehicle',
@@ -32,6 +34,7 @@ router.get(
     InventoryController.getInventory
 );
 
+// Delete vehicle
 router.delete(
     '/vehicles/delete/:id',
     // authenticateToken,

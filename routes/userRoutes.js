@@ -5,15 +5,12 @@ const { authenticateToken, isAdmin } = require('../middleware/authMiddleware');
 
 const router = express.Router();
 
-// Public Routes
+// * Public Routes *
 router.post('/register', UserController.registerUser);
 router.post('/login', UserController.loginUser);
 router.post('/password-reset', UserController.requestPasswordReset);
 
-// Protected Route Examples
+// * Protected Route Examples *
 router.get('/fetch-by-id', authenticateToken, UserController.fetchUserById);
-router.get('/adminDashboard', authenticateToken, isAdmin, (req, res) => {
-    res.json({ message: 'Welcome, Admin!' });
-});
 
 module.exports = router;

@@ -41,6 +41,12 @@ class AuctionModel {
     `;
     await client.query(query, [status, vehicleId]);
   }
+
+  /**
+   * Fetches vehicle details from the given vehicle ID.
+   * @param {number} vehicleId 
+   * @returns 
+   */
   static async findByVehicleId(vehicleId) {
     const { rows } = await pool.query(
       'SELECT * FROM auction_vehicles WHERE vehicle_id = $1',
