@@ -8,7 +8,7 @@ CREATE TYPE service_category AS ENUM ('maintenance', 'repair', 'inspection', 'de
 CREATE TYPE contact_method AS ENUM ('email', 'phone', 'sms', 'whatsapp');
 CREATE TYPE fuel_type AS ENUM ('gasoline', 'diesel', 'electric', 'hybrid', 'plug_in_hybrid');
 CREATE TYPE transmission_type AS ENUM ('automatic', 'manual', 'cvt', 'semi_automatic');
-CREATE TYPE body_type AS ENUM ('sedan', 'suv', 'truck', 'coupe', 'convertible', 'hatchback', 'minivan', 'van');
+CREATE TYPE body_type AS ENUM ('sedan', 'suv', 'truck', 'coupe', 'convertible', 'hatchback', 'minivan', 'van', 'wagon');
 
 -- Users and Authentication
 CREATE TABLE USERS (
@@ -100,7 +100,8 @@ CREATE TABLE VEHICLES (
     location VARCHAR(100),
     is_featured BOOLEAN NOT NULL DEFAULT FALSE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    carfax_link TEXT
 );
 
 CREATE TABLE VEHICLE_FEATURES (

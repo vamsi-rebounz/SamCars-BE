@@ -10,6 +10,7 @@ const UserController = {
     
     // Register a new user
     async registerUser(req, res) {
+        
         // Using req.fields to handle form-data
         console.log('req.fields:', req.fields);
         const first_name = req.fields.first_name;
