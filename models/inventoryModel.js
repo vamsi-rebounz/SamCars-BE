@@ -15,7 +15,7 @@ class InventoryModel {
         const client = await pool.connect();
         try {
             await client.query('BEGIN');
-
+    
             const {
                 make,
                 model,
@@ -28,15 +28,19 @@ class InventoryModel {
                 transmission,
                 body_type,
                 description,
-                tags
+                condition = 'used', // Default to 'used' if not provided
+                status = 'available', // Default to 'available' if not provided
+                tags = [],
+                features = [],
+                carfax_link = null // Default to null if not provided
             } = vehicleData;
-
+    
             // 1. First check if make exists, if not create it
             let makeResult = await client.query(
                 'SELECT make_id FROM VEHICLE_MAKES WHERE name = $1',
                 [make]
             );
-
+    
             let make_id;
             if (makeResult.rows.length === 0) {
                 const newMake = await client.query(
@@ -47,13 +51,13 @@ class InventoryModel {
             } else {
                 make_id = makeResult.rows[0].make_id;
             }
-
+    
             // 2. Check if model exists for this make, if not create it
             let modelResult = await client.query(
                 'SELECT model_id FROM VEHICLE_MODELS WHERE make_id = $1 AND name = $2',
                 [make_id, model]
             );
-
+    
             let model_id;
             if (modelResult.rows.length === 0) {
                 const newModel = await client.query(
@@ -64,24 +68,24 @@ class InventoryModel {
             } else {
                 model_id = modelResult.rows[0].model_id;
             }
-
-            // 3. Insert the vehicle
+    
+            // 3. Insert the vehicle with status and condition
             const vehicleResult = await client.query(
                 `INSERT INTO VEHICLES (
                     make_id, model_id, year, price, mileage, vin,
                     exterior_color, interior_color, transmission,
-                    body_type, description, status
-                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'available')
+                    body_type, description, condition, status, carfax_link
+                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
                 RETURNING vehicle_id`,
                 [
                     make_id, model_id, year, price, mileage, vin,
                     exterior_color, interior_color, transmission,
-                    body_type, description
+                    body_type, description, condition, status, carfax_link
                 ]
             );
-
+    
             const vehicle_id = vehicleResult.rows[0].vehicle_id;
-
+    
             // 4. Handle tags if provided
             if (tags && tags.length > 0) {
                 for (const tag of tags) {
@@ -90,7 +94,7 @@ class InventoryModel {
                         'SELECT tag_id FROM VEHICLE_TAGS WHERE name = $1',
                         [tag]
                     );
-
+    
                     let tag_id;
                     if (tagResult.rows.length === 0) {
                         const newTag = await client.query(
@@ -101,7 +105,7 @@ class InventoryModel {
                     } else {
                         tag_id = tagResult.rows[0].tag_id;
                     }
-
+    
                     // Create tag mapping
                     await client.query(
                         'INSERT INTO VEHICLE_TAG_MAPPING (vehicle_id, tag_id) VALUES ($1, $2)',
@@ -110,14 +114,46 @@ class InventoryModel {
                 }
             }
 
-            // 5. Handle image uploads if provided
+            // 5. Handle features
+            if (features.length > 0) {
+                const processedFeatures = new Set(); // To avoid duplicates
+                
+                for (const feature of features) {
+                    if (processedFeatures.has(feature)) continue;
+                    processedFeatures.add(feature);
+
+                    let featureResult = await client.query(
+                        'SELECT feature_id FROM VEHICLE_FEATURES WHERE name = $1',
+                        [feature]
+                    );
+
+                    let feature_id;
+                    if (featureResult.rows.length === 0) {
+                        const newFeature = await client.query(
+                            'INSERT INTO VEHICLE_FEATURES (name) VALUES ($1) RETURNING feature_id',
+                            [feature]
+                        );
+                        feature_id = newFeature.rows[0].feature_id;
+                    } else {
+                        feature_id = featureResult.rows[0].feature_id;
+                    }
+
+                    await client.query(
+                        'INSERT INTO VEHICLE_FEATURE_MAPPING (vehicle_id, feature_id) VALUES ($1, $2)',
+                        [vehicle_id, feature_id]
+                    );
+                }
+            }
+
+    
+            // 6. Handle image uploads if provided
             if (files && files.length > 0) {
                 // Upload all images to Firebase concurrently
                 const uploadPromises = files.map(file =>
                     uploadToFirebase(file.buffer, file.originalname, file.mimetype)
                 );
                 const imageUrls = await Promise.all(uploadPromises);
-
+    
                 // Create metadata for each image
                 const imageMetadata = files.map((file, index) => ({
                     originalName: file.originalname,
@@ -126,7 +162,7 @@ class InventoryModel {
                     uploadedAt: new Date().toISOString(),
                     url: imageUrls[index]
                 }));
-
+    
                 // Insert into vehicle_images with array of URLs and metadata
                 await client.query(
                     `INSERT INTO vehicle_images (
@@ -143,7 +179,7 @@ class InventoryModel {
                     ]
                 );
             }
-
+    
             await client.query('COMMIT');
             return vehicle_id;
         } catch (error) {
@@ -193,7 +229,8 @@ class InventoryModel {
                 is_featured,
                 status,
                 description,
-                tags
+                tags,
+                carfax_link
             } = vehicleData;
 
 
@@ -287,6 +324,7 @@ class InventoryModel {
             addUpdateField('status', status);
             addUpdateField('updated_at', new Date());
             addUpdateField('description', description);
+            addUpdateField('carfax_link', carfax_link);
 
             if (updateFields.length > 0) {
                 const updateQuery = `
@@ -426,9 +464,9 @@ class InventoryModel {
                     );
                 }
             }
-
             await client.query('COMMIT');
-        } catch (error) {
+        } 
+        catch (error) {
             await client.query('ROLLBACK');
             throw error;
         } finally {
@@ -473,28 +511,36 @@ class InventoryModel {
 
         let vehicleQuery = `
             SELECT
-              v.vehicle_id AS id,
-              vm.name AS make,
-              vmod.name AS model,
-              v.year,
-              v.vin,
-              v.price,
-              v.mileage,
-              v.status,
-              v.body_type,
-              v.is_featured,
-              di.date_added,
-              COALESCE(
-                (SELECT image_urls[primary_image_index + 1] FROM VEHICLE_IMAGES vi WHERE vi.vehicle_id = v.vehicle_id AND vi.is_primary = TRUE LIMIT 1),
-                (SELECT image_urls[1] FROM VEHICLE_IMAGES vi WHERE vi.vehicle_id = v.vehicle_id LIMIT 1)
-              ) AS image_url,
-              v.location,
-              ARRAY(
-                  SELECT vt.name
-                  FROM VEHICLE_TAG_MAPPING vtm
-                  JOIN VEHICLE_TAGS vt ON vtm.tag_id = vt.tag_id
-                  WHERE vtm.vehicle_id = v.vehicle_id
-              ) AS tags
+                v.vehicle_id AS id,
+                vm.name AS make,
+                vmod.name AS model,
+                v.year,
+                v.vin,
+                v.price,
+                v.mileage,
+                v.status,
+                v.body_type,
+                v.is_featured,
+                v.carfax_link,
+                v.created_at,
+                v.updated_at,
+                COALESCE(
+                    (SELECT image_urls[primary_image_index + 1] FROM VEHICLE_IMAGES vi WHERE vi.vehicle_id = v.vehicle_id AND vi.is_primary = TRUE LIMIT 1),
+                    (SELECT image_urls[1] FROM VEHICLE_IMAGES vi WHERE vi.vehicle_id = v.vehicle_id LIMIT 1)
+                ) AS image_url,
+                v.location,
+                ARRAY(
+                    SELECT vt.name
+                    FROM VEHICLE_TAG_MAPPING vtm
+                    JOIN VEHICLE_TAGS vt ON vtm.tag_id = vt.tag_id
+                    WHERE vtm.vehicle_id = v.vehicle_id
+                ) AS tags,
+                ARRAY(
+                    SELECT vf.name
+                    FROM VEHICLE_FEATURE_MAPPING vfm
+                    JOIN VEHICLE_FEATURES vf ON vfm.feature_id = vf.feature_id
+                    WHERE vfm.vehicle_id = v.vehicle_id
+                ) AS features
             FROM VEHICLES v
             JOIN VEHICLE_MAKES vm ON v.make_id = vm.make_id
             JOIN VEHICLE_MODELS vmod ON v.model_id = vmod.model_id
@@ -539,12 +585,15 @@ class InventoryModel {
                 vin: row.vin,
                 price: parseFloat(row.price),
                 mileage: row.mileage,
+                body_type: row.body_type,
                 status: row.status,
                 tags: row.tags || [],
-                date_added: row.date_added ? new Date(row.date_added).toISOString().split('T')[0] : null,
+                features: row.features,
+                // is_featured: row.is_featured,
                 image_url: row.image_url,
-                body_type: row.body_type,
-                is_featured: row.is_featured,
+                carfax_link: row.carfax_link,
+                created_at: row.created_at,
+                updated_at: row.updated_at,
             }));
 
             const countResult = await client.query(countQuery, values);
@@ -583,12 +632,12 @@ class InventoryModel {
     }
 
     /**
-   * Deletes a vehicle and all its associated data from the database
-   * and related images from Firebase.
-   * @param {number} vehicleId - The ID of the vehicle to delete.
-   * @returns {object|null} - The deleted vehicle object if successful, null if not found.
-   * @throws {Error} - If any database or Firebase operation fails.
-   */
+     * Deletes a vehicle and all its associated data from the database
+     * and related images from Firebase.
+     * @param {number} vehicleId - The ID of the vehicle to delete.
+     * @returns {object|null} - The deleted vehicle object if successful, null if not found.
+     * @throws {Error} - If any database or Firebase operation fails.
+     */
     static async deleteVehicle(vehicle_id) {
         let client; // Declare client for finally block scope
 

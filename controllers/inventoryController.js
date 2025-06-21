@@ -23,7 +23,10 @@ class InventoryController {
                 body_type: req.body.body_type,
                 description: req.body.description,
                 status: req.body.status,
-                tags: req.body.tags ? (typeof req.body.tags === 'string' ? JSON.parse(req.body.tags) : req.body.tags) : []
+                condition : req.body.condition,
+                tags: req.body.tags ? (typeof req.body.tags === 'string' ? JSON.parse(req.body.tags) : req.body.tags) : [],
+                features: req.body.features ? (typeof req.body.features === 'string' ? JSON.parse(req.body.features) : req.body.features) : [],
+                carfax_link: req.body.carfax_link
             };
 
             console.log('Received vehicle data:', vehicleData);
@@ -77,14 +80,15 @@ class InventoryController {
                 is_featured: req.body.is_featured !== undefined ? (req.body.is_featured === 'true') : undefined, // Convert string to boolean
                 status: req.body.status,
                 description: req.body.description,
-                tags: req.body.tags ? JSON.parse(req.body.tags) : undefined
+                tags: req.body.tags ? JSON.parse(req.body.tags) : undefined,
+                features: req.body.features ? JSON.parse(req.body.features) : undefined,
+                carfax_link: req.body.carfax_link
             };
 
-            // You might want to add a validation check here specifically for updates if needed.
-            // const validationError = validateVehicleData(vehicleData);
-            // if (validationError) {
-            //     return res.status(400).json({ error: validationError });
-            // }
+            const validationError = validateVehicleData(vehicleData);
+            if (validationError) {
+                return res.status(400).json({ error: validationError });
+            }
 
             await InventoryModel.updateVehicle(id, vehicleData, req.files);
 
