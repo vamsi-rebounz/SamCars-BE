@@ -6,6 +6,8 @@ const { upload, handleMulterError } = require('../middleware/multerMiddleware');
 const router = express.Router();
 
 // * Admin authorized routes *
+
+// Create a new auction 
 router.post(
     '/add-new',
     upload.array('images', 10),
@@ -15,6 +17,7 @@ router.post(
     AuctionController.addAuctionPurchase
 );
 
+// Fetch all auction purchases
 router.get(
     '/fetch-all',
     // authenticateToken,
@@ -22,6 +25,7 @@ router.get(
     AuctionController.getAuctionVehicles
 );
 
+// Fetch auction purchases summary statistics
 router.get(
     '/dashboard-summary',
     // authenticateToken,
@@ -29,6 +33,7 @@ router.get(
     AuctionController.getAuctionDashboardSummary
 );
 
+// Update auction purchase
 router.put(
     '/update',
     upload.array('images', 10),
@@ -36,6 +41,14 @@ router.put(
     // authenticateToken,
     // isAdmin,
     AuctionController.updateAuctionPurchase
+);
+
+// Delete auction purchase
+router.delete(
+    '/delete/:id',
+    // authenticateToken,
+    // isAdmin,
+    AuctionController.deleteAuctionPurchase
 );
 
 module.exports = router;
