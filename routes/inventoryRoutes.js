@@ -4,9 +4,9 @@ const InventoryController = require('../controllers/inventoryController');
 const { authenticateToken, isAdmin } = require('../middleware/authMiddleware');
 const { upload, handleMulterError } = require('../middleware/multerMiddleware');
 
-// * Inventory routes starts here *
 // * Admin authorized routes *
-// Add vehicle
+
+// Add vehicle to inventory
 router.post(
     '/add-vehicle',
     upload.array('images', 10),
@@ -16,7 +16,7 @@ router.post(
     InventoryController.addVehicle
 );
 
-// Update vehicle
+// Update vehicle in inventory
 router.put(
     '/vehicles/update',
     upload.array('images', 10),
@@ -34,7 +34,7 @@ router.get(
     InventoryController.getInventory
 );
 
-// Delete vehicle
+// Delete vehicle from inventory
 router.delete(
     '/vehicles/delete/:id',
     // authenticateToken,

@@ -1,5 +1,5 @@
 const InventoryModel = require('../models/inventoryModel');
-const AuctionVehicle = require('../models/auctionModel');
+const AuctionModel = require('../models/auctionModel');
 const { upload, handleMulterError } = require('../middleware/multerMiddleware');
 const pool = require('../config/db');
 const { validateVehicleData } = require('../validators/vehicleValidator');
@@ -57,10 +57,10 @@ class AuctionController {
 
           // 2. Add the auction purchase details using the newly created vehicle_id
           auctionData.vehicle_id = vehicle_id;
-          const auction_id = await AuctionVehicle.addAuctionPurchase(vehicle_id, auctionData);
+          const auction_id = await AuctionModel.addAuctionPurchase(vehicle_id, auctionData);
 
           // 3. Update the vehicle status to 'auction'
-          await AuctionVehicle.updateVehicleStatus(vehicle_id, 'auction', client);
+          await AuctionModel.updateVehicleStatus(vehicle_id, 'auction', client);
 
           await client.query('COMMIT'); // Commit the entire transaction
           res.status(201).json({
@@ -218,6 +218,65 @@ class AuctionController {
     }
 
     /**
+     * Deletes an auction purchase and its associated vehicle
+     * @param {Object} req - Express request object
+     * @param {Object} res - Express response object
+     */
+    static async deleteAuctionPurchase(req, res) {
+        try {
+            const auctionId = parseInt(req.params.id, 10);
+            
+            // Validate auction ID
+            if (isNaN(auctionId) || auctionId <= 0) {
+                return res.status(400).json({
+                    status: "error",
+                    message: "Invalid auction ID",
+                    details: "Please provide a valid positive numeric auction ID"
+                });
+            }
+
+            // Get auction details including vehicle_id
+            const auction = await AuctionModel.getAuctionDetails(auctionId);
+            if (!auction) {
+                return res.status(404).json({
+                    status: "error",
+                    message: "Auction purchase not found"
+                });
+            }
+
+            // Delete auction and vehicle in transaction
+            const result = await AuctionModel.deleteAuctionWithVehicle(auctionId, auction.vehicle_id);
+
+            if (result.success) {
+                return res.status(200).json({
+                    status: "success",
+                    message: "Auction purchase and vehicle deleted successfully",
+                    data: {
+                        auction_id: auctionId,
+                        vehicle_id: auction.vehicle_id,
+                        deleted_at: new Date().toISOString(),
+                        images_deleted: result.imagesDeleted
+                    }
+                });
+            }
+
+            return res.status(500).json({
+                status: "error",
+                message: "Failed to complete deletion"
+            });
+
+        } catch (error) {
+            console.error('Error in deleteAuctionPurchase:', error);
+            res.status(500).json({
+                status: "error",
+                message: "Failed to delete auction purchase",
+                details: process.env.NODE_ENV === 'development' ? error.message : undefined
+            });
+        }
+    }
+
+
+    /**
      * Fetches a list of vehicles that are currently in an auction.
      * @param {reque} req - Express request object
      * @param {res} res - Express response object
@@ -229,7 +288,7 @@ class AuctionController {
             const limit = parseInt(req.query.limit) || 10;
             const page = parseInt(req.query.page) || 1;
             const search = req.query.search ? String(req.query.search).trim() : null;
-            const sort_by = req.query.sort_by ? String(req.query.sort_by).trim() : 'purchaseDate';
+            const sort_by = req.query.sort_by ? String(req.query.sort_by).trim() : 'purchase_date';
             const sort_order = req.query.sort_order ? String(req.query.sort_order).trim().toUpperCase() : 'DESC';
             const status = req.query.status ? String(req.query.status).trim() : null;
     
@@ -250,7 +309,7 @@ class AuctionController {
             }
     
     
-            const { vehicles, totalItems } = await AuctionVehicle.fetchAuctionVehicles({
+            const { vehicles, totalItems } = await AuctionModel.fetchAuctionVehicles({
                 limit,
                 offset,
                 search,
@@ -354,7 +413,7 @@ class AuctionController {
             }
 
             // Fetch summary statistics from the model
-            const summary = await AuctionVehicle.getAuctionSummaryStatistics({
+            const summary = await AuctionModel.getAuctionSummaryStatistics({
                 date_from: date_from,
                 date_to: date_to,
                 status: status || null // Pass null if status is not provided

@@ -639,53 +639,61 @@ class InventoryModel {
      * @returns {object|null} - The deleted vehicle object if successful, null if not found.
      * @throws {Error} - If any database or Firebase operation fails.
      */
-    static async deleteVehicle(vehicle_id) {
-        let client; // Declare client for finally block scope
-
+    static async deleteVehicle(vehicle_id, client = pool) {
+        let shouldReleaseClient = false;
+        
         try {
-            client = await pool.connect();
-            await client.query('BEGIN'); // Start a transaction
-
+            // Handle transaction client
+            if (client === pool) {
+                client = await pool.connect();
+                await client.query('BEGIN');
+                shouldReleaseClient = true;
+            }
+    
             // 1. Fetch image URLs before deleting vehicle data
-            const imagesQuery = 'SELECT image_urls FROM VEHICLE_IMAGES WHERE vehicle_id = $1';
-            const imagesResult = await client.query(imagesQuery, [vehicle_id]);
+            const imagesResult = await client.query(
+                'SELECT image_urls FROM vehicle_images WHERE vehicle_id = $1',
+                [vehicle_id]
+            );
             const imageUrlsToDelete = imagesResult.rows.length > 0 ? imagesResult.rows[0].image_urls : [];
-
-            // 2. Delete/Update related records based on foreign key constraints
-            await client.query('DELETE FROM VEHICLE_SALES WHERE vehicle_id = $1', [vehicle_id]);
-            await client.query('DELETE FROM AUCTION_VEHICLES WHERE vehicle_id = $1', [vehicle_id]);
-            await client.query('DELETE FROM TEST_DRIVE_APPOINTMENTS WHERE vehicle_id = $1', [vehicle_id]);
-            await client.query('DELETE FROM SERVICE_APPOINTMENTS WHERE vehicle_id = $1', [vehicle_id]);
-
-            // For ON DELETE SET NULL (e.g., PAYMENTS, DOCUMENTS)
-            await client.query('UPDATE PAYMENTS SET vehicle_id = NULL WHERE vehicle_id = $1', [vehicle_id]);
-            await client.query('UPDATE DOCUMENTS SET vehicle_id = NULL WHERE vehicle_id = $1', [vehicle_id]);
-
-            // 3. Delete the vehicle from the main VEHICLES table
-            const deleteVehicleQuery = 'DELETE FROM VEHICLES WHERE vehicle_id = $1 RETURNING *';
-            const result = await client.query(deleteVehicleQuery, [vehicle_id]);
-
+    
+            // 2. Delete/Update related records
+            await client.query('DELETE FROM vehicle_sales WHERE vehicle_id = $1', [vehicle_id]);
+            await client.query('DELETE FROM auction_vehicles WHERE vehicle_id = $1', [vehicle_id]);
+            await client.query('DELETE FROM test_drive_appointments WHERE vehicle_id = $1', [vehicle_id]);
+            await client.query('DELETE FROM service_appointments WHERE vehicle_id = $1', [vehicle_id]);
+            await client.query('UPDATE payments SET vehicle_id = NULL WHERE vehicle_id = $1', [vehicle_id]);
+            await client.query('UPDATE documents SET vehicle_id = NULL WHERE vehicle_id = $1', [vehicle_id]);
+    
+            // 3. Delete the vehicle
+            const result = await client.query(
+                'DELETE FROM vehicles WHERE vehicle_id = $1 RETURNING *',
+                [vehicle_id]
+            );
+    
             if (result.rows.length === 0) {
-                await client.query('ROLLBACK'); // Rollback if vehicle not found
-                return null; // Indicate vehicle not found
+                if (shouldReleaseClient) await client.query('ROLLBACK');
+                return null;
             }
-
-            // 4. Commit database changes first
-            await client.query('COMMIT');
-
-            // 5. Delete images from Firebase Storage (after successful DB commit)
-            await deleteFromFirebase(imageUrlsToDelete);
-
-            return result.rows[0]; // Return the deleted vehicle object
+    
+            if (shouldReleaseClient) {
+                await client.query('COMMIT');
+            }
+    
+            // 4. Clean up storage after successful commit
+            if (imageUrlsToDelete.length > 0) {
+                await Promise.all(imageUrlsToDelete.map(url => deleteFromFirebase(url)));
+            }
+    
+            return result.rows[0];
+    
         } catch (error) {
-            if (client) {
-                await client.query('ROLLBACK'); // Rollback on error
-            }
+            if (shouldReleaseClient) await client.query('ROLLBACK');
             console.error('Error in VehicleModel.deleteVehicle:', error);
-            throw error; // Re-throw the error for the controller to handle
+            throw error;
         } finally {
-            if (client) {
-                client.release(); // Release client back to pool
+            if (shouldReleaseClient && client) {
+                client.release();
             }
         }
     }
