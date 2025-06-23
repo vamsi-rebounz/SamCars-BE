@@ -25,21 +25,18 @@ class VehicleModel {
                     v.transmission::text,
                     v.fuel_type::text,
                     v.engine,
+                    v.body_type,
                     v.vin,
                     v.condition::text,
                     v.status,
+                    v.description,
                     v.is_featured as featured,
                     v.carfax_link,
                     CASE
                         WHEN v.status = 'available' THEN true
                         ELSE false
                     END as available,
-                    vi.image_urls as images,
-                    json_build_object(
-                        'name', u.first_name || ' ' || u.last_name,
-                        'email', u.email,
-                        'phone', u.phone
-                    ) as dealer_info
+                    vi.image_urls as images
                 FROM vehicles v
                 JOIN vehicle_makes vm ON v.make_id = vm.make_id
                 JOIN vehicle_models vmod ON v.model_id = vmod.model_id
