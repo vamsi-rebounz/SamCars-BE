@@ -71,7 +71,8 @@ class AuctionModel {
     try {
         let query = `
             SELECT
-                av.auction_id AS id,
+                av.auction_id AS "auctionId",
+                av.vehicle_id AS "vehicleId",
                 vm.name AS make,
                 vmo.name AS model,
                 v.year,
@@ -86,7 +87,7 @@ class AuctionModel {
                 av.profit,
                 av.created_at AS "createdAt",
                 av.updated_at AS "updatedAt",
-                vi.image_urls AS "imageUrls"  -- NEW: Fetch image URLs
+                vi.image_urls AS "imageUrls"
             FROM
                 AUCTION_VEHICLES av
             JOIN
@@ -95,7 +96,7 @@ class AuctionModel {
                 VEHICLE_MAKES vm ON v.make_id = vm.make_id
             JOIN
                 VEHICLE_MODELS vmo ON v.model_id = vmo.model_id
-            LEFT JOIN  -- NEW: Left join to images table
+            LEFT JOIN
                 VEHICLE_IMAGES vi ON v.vehicle_id = vi.vehicle_id
         `;
 
@@ -149,7 +150,7 @@ class AuctionModel {
             'list_price', 'sold_price', 'status', 'profit', 'created_at',
             'updated_at', 'make', 'model', 'year', 'vin'
         ];
-        const actualSortBy = sortBy || 'purchase_date'; // Default sort
+        const actualSortBy = sortBy || 'purchase_date';
         const actualSortOrder = (sortOrder && sortOrder.toUpperCase() === 'DESC') ? 'DESC' : 'ASC';
 
         if (!allowedSortBy.includes(actualSortBy)) {
@@ -172,7 +173,7 @@ class AuctionModel {
             case 'model': dbSortBy = 'vmo.name'; break;
             case 'year': dbSortBy = 'v.year'; break;
             case 'vin': dbSortBy = 'v.vin'; break;
-            default: dbSortBy = 'av.purchase_date'; // Fallback
+            default: dbSortBy = 'av.purchase_date';
         }
 
         query += ` ORDER BY ${dbSortBy} ${actualSortOrder}`;
@@ -204,8 +205,8 @@ class AuctionModel {
      * Calculates total investment, total profit, vehicles purchased, and vehicles sold
      * within a given date range and optional status filter.
      * @param {object} options - Options for filtering the summary.
-     * @param {string} options.dateFrom - Start date for filtering (YYYY-MM-DD).
-     * @param {string} options.dateTo - End date for filtering (YYYY-MM-DD).
+     * @param {string} options.date_from - Start date for filtering (YYYY-MM-DD).
+     * @param {string} options.date_to - End date for filtering (YYYY-MM-DD).
      * @param {string} [options.status] - Optional: Filter by vehicle status.
      * @returns {Promise<{
     * totalInvestment: number,
@@ -214,7 +215,7 @@ class AuctionModel {
     * vehiclesSold: number
     * }>} - Summary statistics.
   */
-  static async getAuctionSummaryStatistics({ dateFrom, dateTo, status }) {
+  static async getAuctionSummaryStatistics({ date_from: dateFrom, date_to: dateTo, status }) {
         const client = await pool.connect();
         try {
             // Basic validation for status if provided

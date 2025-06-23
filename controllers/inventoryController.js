@@ -1,6 +1,6 @@
 const { validateVehicleData } = require('../validators/vehicleValidator');
 const { buildWhereClauseForInventory } = require('../helpers/inventoryHelper');
-const InventoryModel = require('../models/inventoryModel'); // Import the new model
+const InventoryModel = require('../models/inventoryModel');
 
 class InventoryController {
     /**
@@ -86,10 +86,10 @@ class InventoryController {
                 carfax_link: req.body.carfax_link
             };
 
-            const validationError = validateVehicleData(vehicleData);
-            if (validationError) {
-                return res.status(400).json({ error: validationError });
-            }
+            // const validationError = validateVehicleData(vehicleData);
+            // if (validationError) {
+            //     return res.status(400).json({ error: validationError });
+            // }
 
             await InventoryModel.updateVehicle(id, vehicleData, req.files);
 
