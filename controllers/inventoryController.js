@@ -129,7 +129,7 @@ class InventoryController {
                 search = '',
                 sort_by = 'date_added',
                 sort_order = 'desc',
-                status
+                status = 'available'
             } = req.query;
 
             const inventoryData = await InventoryModel.getInventory({
