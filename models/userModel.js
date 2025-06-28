@@ -88,24 +88,16 @@ const UserModel = {
         }
     },
 
-    /**
-     * Fetch a user by email (used for login and password reset).
-     * @param {string} email
-     * @returns {Promise<object|null>}
-     */
-    async getUserByEmail(email) {
-        try {
-            const result = await pool.query(
-                `SELECT user_id, first_name, last_name, email, password_hash, role
-                 FROM users
-                 WHERE email = $1`,
-                [email]
-            );
-            return result.rows[0] || null;
-        } catch (error) {
-            console.error('Error in getUserByEmail:', error);
-            throw new Error('Could not fetch user by email.');
-        }
+    async findByEmail(email) {
+        const result = await pool.query('SELECT * FROM USERS WHERE email = $1', [email]);
+        return result.rows[0];
+    },
+      
+    async updatePassword(userId, hashedPassword) {
+        await pool.query(
+          'UPDATE USERS SET password_hash = $1, updated_at = NOW() WHERE user_id = $2',
+          [hashedPassword, userId]
+        );
     }
 }; 
 
