@@ -28,6 +28,8 @@ class AuctionController {
             interior_color: req.body.interior_color,
             transmission: req.body.transmission,
             body_type: req.body.body_type,
+            condition: req.body.condition,
+            fuel_type: req.body.fuel_type,
             description: req.body.description,
             status: req.body.status,
             tags: req.body.tags ? (typeof req.body.tags === 'string' ? JSON.parse(req.body.tags) : req.body.tags) : []
@@ -72,7 +74,7 @@ class AuctionController {
 
       } catch (error) {
           await client.query('ROLLBACK'); // Rollback if any part fails
-          console.error('Error adding auction purchase:', error);
+          console.error('Error adding auction purchase:', error, '\nRequest body:', req.body, '\nFiles:', req.files);
           res.status(500).json({ success: false, message: 'Failed to add auction purchase', error: error.message });
       } finally {
           client.release(); // Always release the client

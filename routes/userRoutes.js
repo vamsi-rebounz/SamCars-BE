@@ -12,5 +12,6 @@ router.post('/password-reset', UserController.requestPasswordReset);
 
 // * Protected Route Examples *
 router.get('/fetch-by-id', authenticateToken, UserController.fetchUserById);
+router.put('/update-profile', authenticateToken, UserController.updateUserProfile);
 
 module.exports = router;

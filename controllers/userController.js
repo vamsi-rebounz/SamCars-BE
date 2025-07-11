@@ -139,6 +139,109 @@ const UserController = {
         }
     },
 
+    // Update user profile
+    async updateUserProfile(req, res) {
+        try {
+            const userId = req.user.user_id; // From JWT token
+            const {
+                first_name,
+                last_name,
+                email,
+                phone,
+                current_password,
+                new_password
+            } = req.fields;
+
+            // Validate required fields
+            if (!first_name || !last_name || !email) {
+                return res.status(400).json({ 
+                    success: false, 
+                    message: 'First name, last name, and email are required.' 
+                });
+            }
+
+            // Validate email format
+            if (!/\S+@\S+\.\S+/.test(email)) {
+                return res.status(400).json({ 
+                    success: false, 
+                    message: 'Invalid email format.' 
+                });
+            }
+
+            // If changing password, validate current password
+            if (new_password) {
+                if (!current_password) {
+                    return res.status(400).json({ 
+                        success: false, 
+                        message: 'Current password is required to change password.' 
+                    });
+                }
+
+                if (new_password.length < 8) {
+                    return res.status(400).json({ 
+                        success: false, 
+                        message: 'New password must be at least 8 characters long.' 
+                    });
+                }
+
+                // Verify current password
+                const currentUser = await UserModel.getUserByEmail(email);
+                if (!currentUser) {
+                    return res.status(404).json({ 
+                        success: false, 
+                        message: 'User not found.' 
+                    });
+                }
+
+                const passwordMatch = await bcrypt.compare(current_password, currentUser.password_hash);
+                if (!passwordMatch) {
+                    return res.status(401).json({ 
+                        success: false, 
+                        message: 'Current password is incorrect.' 
+                    });
+                }
+            }
+
+            // Update user profile
+            const updatedUser = await UserModel.updateUserProfile(userId, {
+                first_name,
+                last_name,
+                email,
+                phone,
+                new_password
+            });
+
+            res.json({
+                success: true,
+                message: 'Profile updated successfully.',
+                user: {
+                    id: updatedUser.user_id,
+                    email: updatedUser.email,
+                    first_name: updatedUser.first_name,
+                    last_name: updatedUser.last_name,
+                    role: updatedUser.role,
+                    phone: updatedUser.phone,
+                    updated_at: updatedUser.updated_at
+                }
+            });
+
+        } catch (error) {
+            console.error('Error in updateUserProfile controller:', error);
+            if (error.message === 'Email already registered.') {
+                return res.status(409).json({ 
+                    success: false, 
+                    error_code: 'EMAIL_ALREADY_REGISTERED', 
+                    message: error.message 
+                });
+            }
+            res.status(500).json({ 
+                success: false, 
+                error_code: 'SERVER_ERROR', 
+                message: 'Failed to update profile.' 
+            });
+        }
+    },
+
     // Request a password reset
     async requestPasswordReset(req, res) {
         const { email } = req.body;
