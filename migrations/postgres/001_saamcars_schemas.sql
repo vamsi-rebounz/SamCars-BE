@@ -2,7 +2,7 @@
 CREATE TYPE user_role AS ENUM ('customer', 'admin', 'sales', 'technician', 'manager');
 CREATE TYPE appointment_status AS ENUM ('pending', 'confirmed', 'completed', 'cancelled', 'rescheduled');
 CREATE TYPE payment_status AS ENUM ('pending', 'completed', 'failed', 'refunded');
-CREATE TYPE vehicle_status AS ENUM ('available', 'sold', 'pending', 'maintenance', 'auction');
+CREATE TYPE vehicle_status AS ENUM ('available', 'sold', 'pending', 'maintenance', 'reserved');
 CREATE TYPE vehicle_condition AS ENUM ('new', 'used', 'certified_pre_owned', 'excellent', 'good', 'fair');
 CREATE TYPE service_category AS ENUM ('maintenance', 'repair', 'inspection', 'detailing', 'tire_service');
 CREATE TYPE contact_method AS ENUM ('email', 'phone', 'sms', 'whatsapp');
@@ -323,7 +323,7 @@ CREATE TABLE AUCTION_VEHICLES (
     list_price DECIMAL(10, 2) CHECK (list_price > 0),
     sold_price DECIMAL(10, 2) CHECK (sold_price > 0),
     profit DECIMAL(10, 2) GENERATED ALWAYS AS (CASE WHEN sold_price IS NULL THEN NULL ELSE sold_price - (purchase_price + additional_costs) END) STORED,
-    status vehicle_status NOT NULL DEFAULT 'auction',
+    status vehicle_status NOT NULL DEFAULT 'reserved',
     notes TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
