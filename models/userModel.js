@@ -201,7 +201,13 @@ const UserModel = {
             }
             throw new Error('Could not update user profile due to a server error.');
         }
-      
+    },
+
+    /**
+     * Find a user by email.
+     * @param {string} email
+     * @returns {Promise<object|null>}
+     */
     async findByEmail(email) {
         const { rows } = await pool.query(
             'SELECT user_id, email, first_name FROM users WHERE email = $1',
@@ -209,7 +215,13 @@ const UserModel = {
         );
         return rows[0] || null;
     },
-      
+
+    /**
+     * Update a user's password.
+     * @param {string|number} userId
+     * @param {string} hashedPassword
+     * @returns {Promise<void>}
+     */
     async updatePassword(userId, hashedPassword) {
         await pool.query(
           'UPDATE USERS SET password_hash = $1, updated_at = NOW() WHERE user_id = $2',
