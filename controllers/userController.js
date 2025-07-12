@@ -138,37 +138,6 @@ const UserController = {
             res.status(500).json({ success: false, error_code: 'SERVER_ERROR', message: 'Could not fetch user details' });
         }
     },
-
-    // Request a password reset
-    async requestPasswordReset(req, res) {
-        const { email } = req.body;
-        if (!email) return res.status(400).json({ message: 'Email is required.' });
-
-        try {
-            const user = await UserModel.getUserByEmail(email);
-            if (!user) return res.status(404).json({ message: 'User not found.' });
-
-            const resetToken = crypto.randomBytes(32).toString('hex');
-            const resetLink = `https://yourfrontend.com/reset-password?token=${resetToken}`;
-
-            const transporter = nodemailer.createTransport({
-                service: 'gmail',
-                auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS }
-            });
-
-            await transporter.sendMail({
-                from: process.env.EMAIL_USER,
-                to: email,
-                subject: 'Password Reset Request',
-                html: `<p>You requested a password reset. Click the link to reset your password:</p><p><a href="${resetLink}">${resetLink}</a></p>`
-            });
-
-            res.json({ message: 'Password reset link sent to email.' });
-        } catch (error) {
-            console.error('Password reset error:', error);
-            res.status(500).json({ message: 'Failed to send password reset email.' });
-        }
-    }
 };
 
 module.exports = UserController;

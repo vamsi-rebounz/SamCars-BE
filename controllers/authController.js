@@ -17,12 +17,17 @@ exports.requestPasswordReset = async (req, res) => {
 
     await passwordResetModel.createToken(user.user_id, token, expiresAt);
 
-    const resetLink = `${process.env.FRONTEND_URL}/reset-password?token=${token}`;
+    const resetLink = `${process.env.FRONTEND_RESET_PASSWORD_URL}/reset-password?token=${token}`;
 
     await transporter.sendMail({
       from: `"Saam Cars Support" <${process.env.EMAIL_USER}>` || '"Saam Cars Support" <no-reply@saamcars..com>',
       to: email,
       subject: 'Password Reset Request - Saam Cars',
+      headers: {
+        'X-Priority': '1', // 1 = High Priority (used by Gmail)
+        // 'X-MSMail-Priority': 'High', // For microsoft mail clients
+        'Importance': 'high' // Gmail may flag these as important
+      },
       html: `
         <div style="font-family: 'Segoe UI', Arial, sans-serif; max-width: 600px; margin: 0 auto;">
           <div style="background-color: #0078D4; padding: 20px; color: white;">
@@ -33,7 +38,7 @@ exports.requestPasswordReset = async (req, res) => {
             <p>Hello User,</p>
             <p>We received a request to reset your password. Click the button below to proceed:</p>
             <div style="margin: 25px 0; text-align: center;">
-              <a href="${process.env.FRONTEND_URL || 'http://localhost:3000/reset-password'}?token=${token}" 
+              <a href="${process.env.FRONTEND_RESET_PASSWORD_URL || 'http://localhost:3000/reset-password'}?token=${token}" 
                  style="background-color: #0078D4; color: white; padding: 12px 24px; text-decoration: none; border-radius: 4px; font-weight: bold; display: inline-block;">
                 Reset Password
               </a>

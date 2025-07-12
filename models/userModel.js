@@ -89,8 +89,11 @@ const UserModel = {
     },
 
     async findByEmail(email) {
-        const result = await pool.query('SELECT * FROM USERS WHERE email = $1', [email]);
-        return result.rows[0];
+        const { rows } = await pool.query(
+            'SELECT user_id, email, first_name FROM users WHERE email = $1',
+            [email]
+        );
+        return rows[0] || null;
     },
       
     async updatePassword(userId, hashedPassword) {

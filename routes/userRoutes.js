@@ -16,11 +16,6 @@ router.post(
     UserController.loginUser
 );
 
-router.post(
-    '/password-reset', 
-    UserController.requestPasswordReset
-);
-
 // * Protected Routes *
 router.get(
     '/fetch-by-id', 
