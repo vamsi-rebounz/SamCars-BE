@@ -11,6 +11,11 @@ router.post(
     UserController.registerUser
 );
 
+// * Protected Route Examples *
+router.get('/fetch-by-id', authenticateToken, UserController.fetchUserById);
+
+router.put('/update-profile', authenticateToken, UserController.updateUserProfile);
+
 router.post(
     '/login', 
     UserController.loginUser

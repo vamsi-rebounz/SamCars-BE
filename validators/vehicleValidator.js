@@ -35,6 +35,8 @@ function validateVehicleData(data) {
     if (!price) return 'Price is required';
     if (!transmission) return 'Transmission is required';
     if (!body_type) return 'Body type is required';
+    if (!condition) return 'Condition is required';
+    if (!fuel_type) return 'Fuel type is required';
 
     // Type validations
     if (typeof make !== 'string') return 'Make must be a string';
@@ -79,13 +81,13 @@ function validateVehicleData(data) {
     // Validate vehicle conditions against enum types
     const validConditions = Object.values(VEHICLE_CONDITIONS);
     if (!validConditions.includes(condition)) {
-        throw new Error('Invalid vehicle status');
+        throw new Error('Invalid vehicle condition');
     }
 
-    // Valid vehicle statues against enum types
+    // Valid vehicle statuses against enum types
     const validStatuses = Object.values(VEHICLE_STATUSES);
     if (!validStatuses.includes(status)) {
-        throw new Error('Invalid vehicle condition');
+        throw new Error('Invalid vehicle status');
     }
 
     // Validate fuel type
