@@ -87,7 +87,7 @@ const UserModel = {
             throw new Error('Could not fetch user details.');
         }
     },
-
+  
     /**
      * Fetch a user by email (used for login and password reset).
      * @param {string} email
@@ -201,6 +201,20 @@ const UserModel = {
             }
             throw new Error('Could not update user profile due to a server error.');
         }
+      
+    async findByEmail(email) {
+        const { rows } = await pool.query(
+            'SELECT user_id, email, first_name FROM users WHERE email = $1',
+            [email]
+        );
+        return rows[0] || null;
+    },
+      
+    async updatePassword(userId, hashedPassword) {
+        await pool.query(
+          'UPDATE USERS SET password_hash = $1, updated_at = NOW() WHERE user_id = $2',
+          [hashedPassword, userId]
+        );
     }
 }; 
 

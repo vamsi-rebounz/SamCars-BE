@@ -43,6 +43,19 @@ CREATE INDEX idx_users_email ON USERS(email);
 CREATE INDEX idx_user_sessions_user_id ON USER_SESSIONS(user_id);
 CREATE INDEX idx_user_sessions_token ON USER_SESSIONS(token); 
 
+-- Password reset tokens table
+CREATE TABLE PASSWORD_RESET_TOKENS (
+    token_id SERIAL PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES USERS(user_id) ON DELETE CASCADE,
+    token VARCHAR(64) NOT NULL UNIQUE,
+    expires_at TIMESTAMPTZ NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Indexes for faster lookups
+CREATE INDEX idx_password_reset_tokens_token ON PASSWORD_RESET_TOKENS(token);
+CREATE INDEX idx_password_reset_tokens_user ON PASSWORD_RESET_TOKENS(user_id);
+CREATE INDEX idx_password_reset_tokens_expires ON PASSWORD_RESET_TOKENS(expires_at);
 
 -- Create Users Table
 CREATE TABLE IF NOT EXISTS USERS (
