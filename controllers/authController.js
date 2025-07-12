@@ -38,7 +38,7 @@ exports.requestPasswordReset = async (req, res) => {
             <p>Hello User,</p>
             <p>We received a request to reset your password. Click the button below to proceed:</p>
             <div style="margin: 25px 0; text-align: center;">
-              <a href="${process.env.FRONTEND_RESET_PASSWORD_URL || 'http://localhost:3000/reset-password'}?token=${token}" 
+              <a href="${process.env.FRONTEND_RESET_PASSWORD_URL || 'http://localhost:5173/reset-password'}?token=${token}" 
                  style="background-color: #0078D4; color: white; padding: 12px 24px; text-decoration: none; border-radius: 4px; font-weight: bold; display: inline-block;">
                 Reset Password
               </a>
