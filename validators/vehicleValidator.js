@@ -32,7 +32,7 @@ function validateVehicleData(data) {
     if (!make) return 'Make is required';
     if (!model) return 'Model is required';
     if (!year) return 'Year is required';
-    if (!price) return 'Price is required';
+    // if (!price) return 'Price is required';
     if (!transmission) return 'Transmission is required';
     if (!body_type) return 'Body type is required';
     if (!condition) return 'Condition is required';
