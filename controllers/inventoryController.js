@@ -27,7 +27,8 @@ class InventoryController {
                 condition : req.body.condition,
                 tags: req.body.tags ? (typeof req.body.tags === 'string' ? JSON.parse(req.body.tags) : req.body.tags) : [],
                 features: req.body.features ? (typeof req.body.features === 'string' ? JSON.parse(req.body.features) : req.body.features) : [],
-                carfax_link: req.body.carfax_link
+                carfax_link: req.body.carfax_link,
+                location: req.body.location
             };
 
             console.log('Received vehicle data:', vehicleData);
@@ -83,7 +84,9 @@ class InventoryController {
                 description: req.body.description,
                 tags: req.body.tags ? JSON.parse(req.body.tags) : undefined,
                 features: req.body.features ? JSON.parse(req.body.features) : undefined,
-                carfax_link: req.body.carfax_link
+                carfax_link: req.body.carfax_link,
+                location: req.body.location,
+                body_type: req.body.body_type
             };
 
             // const validationError = validateVehicleData(vehicleData);

@@ -15,7 +15,7 @@ router.post(
     // authenticateToken,
     // isAdmin,
     AuctionController.addAuctionPurchase
-);
+);  
 
 // Fetch all auction purchases
 router.get(

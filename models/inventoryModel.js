@@ -34,6 +34,7 @@ class InventoryModel {
                 features = [],
                 carfax_link = null, // Default to null if not provided
                 fuel_type,
+                location,
             } = vehicleData;
     
             // 1. First check if make exists, if not create it
@@ -75,13 +76,13 @@ class InventoryModel {
                 `INSERT INTO VEHICLES (
                     make_id, model_id, year, price, mileage, vin,
                     exterior_color, interior_color, transmission,
-                    body_type, description, condition, status, carfax_link, fuel_type
-                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+                    body_type, description, condition, status, carfax_link, fuel_type, location
+                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
                 RETURNING vehicle_id`,
                 [
                     make_id, model_id, year, price, mileage, vin,
                     exterior_color, interior_color, transmission,
-                    body_type, description, condition, status, carfax_link, fuel_type
+                    body_type, description, condition, status, carfax_link, fuel_type, location
                 ]
             );
     
@@ -223,15 +224,19 @@ class InventoryModel {
                 exterior_color,
                 interior_color,
                 transmission,
-                fuel_type,
-                engine,
-                condition,
-                features,
-                is_featured,
                 status,
+                body_type,
+                fuel_type,
+                condition,
+                engine,
+                location,
                 description,
                 tags,
-                carfax_link
+                features,
+                is_featured,
+                carfax_link,
+                created_at,
+                updated_at
             } = vehicleData;
 
 
@@ -326,7 +331,13 @@ class InventoryModel {
             addUpdateField('updated_at', new Date());
             addUpdateField('description', description);
             addUpdateField('carfax_link', carfax_link);
-
+            addUpdateField('location', location);
+            addUpdateField('body_type', body_type);
+            addUpdateField('features', features);
+            addUpdateField('is_featured', is_featured);
+            addUpdateField('carfax_link', carfax_link);
+            addUpdateField('created_at', created_at);
+            addUpdateField('updated_at', updated_at);
             if (updateFields.length > 0) {
                 const updateQuery = `
                     UPDATE vehicles
@@ -519,16 +530,16 @@ class InventoryModel {
                 v.vin,
                 v.price,
                 v.mileage,
-                v.status,
-                v.body_type,
-                v.transmission,
-                v.fuel_type,
-                v.engine,
-                v.condition,
                 v.exterior_color,
                 v.interior_color,
-                v.description,
+                v.transmission,
+                v.status,
+                v.body_type,
+                v.fuel_type,
+                v.condition,
                 v.location,
+                v.engine,
+                v.description,
                 v.is_featured,
                 v.carfax_link,
                 v.created_at,
@@ -591,16 +602,19 @@ class InventoryModel {
                 make: row.make,
                 model: row.model,
                 year: row.year,
-                vin: row.vin,
                 price: parseFloat(row.price),
                 mileage: row.mileage,
-                body_type: row.body_type,
+                vin: row.vin,
+                exterior_color: row.exterior_color,
+                interior_color: row.interior_color,
                 transmission: row.transmission,
+                status: row.status,
                 fuel_type: row.fuel_type,
+                body_type: row.body_type,
                 engine: row.engine,
                 condition: row.condition,
                 location: row.location,
-                status: row.status,
+                description: row.description,
                 tags: row.tags || [],
                 features: row.features,
                 // is_featured: row.is_featured,
