@@ -28,12 +28,16 @@ class AuctionController {
             interior_color: req.body.interior_color,
             transmission: req.body.transmission,
             body_type: req.body.body_type,
-            condition: req.body.condition,
             fuel_type: req.body.fuel_type,
             description: req.body.description,
             status: req.body.status,
-            tags: req.body.tags ? (typeof req.body.tags === 'string' ? JSON.parse(req.body.tags) : req.body.tags) : []
-          };
+            condition: req.body.condition,
+            tags: req.body.tags ? (typeof req.body.tags === 'string' ? JSON.parse(req.body.tags) : req.body.tags) : [],
+            features: req.body.features ? (typeof req.body.features === 'string' ? JSON.parse(req.body.features) : req.body.features) : [],
+            carfax_link: req.body.carfax_link,
+            location: req.body.location,
+            stock_number: req.body.stock_number
+        };
 
           const validationError = validateVehicleData(vehicleData);
           if (validationError) {
@@ -61,8 +65,8 @@ class AuctionController {
           auctionData.vehicle_id = vehicle_id;
           const auction_id = await AuctionModel.addAuctionPurchase(vehicle_id, auctionData);
 
-          // 3. Update the vehicle status to 'auction'
-          await AuctionModel.updateVehicleStatus(vehicle_id, 'auction', client);
+          //? 3. Update the vehicle status to 'auction'
+        //   await AuctionModel.updateVehicleStatus(vehicle_id, 'auction', client);
 
           await client.query('COMMIT'); // Commit the entire transaction
           res.status(201).json({
@@ -117,23 +121,23 @@ class AuctionController {
             const vehicleData = {
                 make: req.body.make,
                 model: req.body.model,
-                year: req.body.year ? parseInt(req.body.year) : undefined,
-                price: req.body.price ? parseFloat(req.body.price) : undefined,
-                mileage: req.body.mileage ? parseInt(req.body.mileage) : undefined,
+                year: parseInt(req.body.year),
+                price: parseFloat(req.body.price),
+                mileage: req.body.mileage ? parseInt(req.body.mileage) : null,
                 vin: req.body.vin,
                 exterior_color: req.body.exterior_color,
                 interior_color: req.body.interior_color,
                 transmission: req.body.transmission,
+                body_type: req.body.body_type,
                 fuel_type: req.body.fuel_type,
-                engine: req.body.engine,
-                condition: req.body.condition,
-                features: req.body.features ? JSON.parse(req.body.features) : undefined,
-                is_featured: req.body.is_featured !== undefined ? 
-                    (req.body.is_featured === 'true') : undefined,
-                status: req.body.status,
                 description: req.body.description,
-                tags: req.body.tags ? JSON.parse(req.body.tags) : undefined,
-                carfax_link: req.body.carfax_link
+                status: req.body.status,
+                condition : req.body.condition,
+                tags: req.body.tags ? (typeof req.body.tags === 'string' ? JSON.parse(req.body.tags) : req.body.tags) : [],
+                features: req.body.features ? (typeof req.body.features === 'string' ? JSON.parse(req.body.features) : req.body.features) : [],
+                carfax_link: req.body.carfax_link,
+                location: req.body.location,
+                stock_number: req.body.stock_number
             };
 
             // 2. Validate vehicle data

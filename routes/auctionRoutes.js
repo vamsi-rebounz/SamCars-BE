@@ -17,22 +17,6 @@ router.post(
     AuctionController.addAuctionPurchase
 );  
 
-// Fetch all auction purchases
-router.get(
-    '/fetch-all',
-    // authenticateToken,
-    // isAdmin,
-    AuctionController.getAuctionVehicles
-);
-
-// Fetch auction purchases summary statistics
-router.get(
-    '/dashboard-summary',
-    // authenticateToken,
-    // isAdmin,
-    AuctionController.getAuctionDashboardSummary
-);
-
 // Update auction purchase
 router.put(
     '/update',
@@ -49,6 +33,22 @@ router.delete(
     // authenticateToken,
     // isAdmin,
     AuctionController.deleteAuctionPurchase
+);
+
+// Fetch all auction purchases
+router.get(
+    '/fetch-all',
+    // authenticateToken,
+    // isAdmin,
+    AuctionController.getAuctionVehicles
+);
+
+// Fetch auction purchases summary statistics
+router.get(
+    '/dashboard-summary',
+    // authenticateToken,
+    // isAdmin,
+    AuctionController.getAuctionDashboardSummary
 );
 
 module.exports = router;

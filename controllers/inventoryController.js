@@ -28,7 +28,8 @@ class InventoryController {
                 tags: req.body.tags ? (typeof req.body.tags === 'string' ? JSON.parse(req.body.tags) : req.body.tags) : [],
                 features: req.body.features ? (typeof req.body.features === 'string' ? JSON.parse(req.body.features) : req.body.features) : [],
                 carfax_link: req.body.carfax_link,
-                location: req.body.location
+                location: req.body.location,
+                stock_number: req.body.stock_number
             };
 
             console.log('Received vehicle data:', vehicleData);

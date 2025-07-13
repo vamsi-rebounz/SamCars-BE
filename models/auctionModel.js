@@ -17,6 +17,13 @@ class AuctionModel {
         );
         return result.rows[0] || null;
     }
+
+    /**
+     * Adds a new auction purchase
+     * @param {number} vehicleId 
+     * @param {object} purchaseData 
+     * @returns {Promise<Object>} Newly created auction purchase
+     */
     static async addAuctionPurchase(vehicleId, purchaseData) {
     const query = `
       INSERT INTO auction_vehicles (
@@ -254,6 +261,7 @@ class AuctionModel {
             client.release();
         }
     }
+    
 
     /**
      * Fetches summary statistics for the auction dashboard.
