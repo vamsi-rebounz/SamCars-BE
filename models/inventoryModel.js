@@ -236,7 +236,8 @@ class InventoryModel {
                 is_featured,
                 carfax_link,
                 created_at,
-                updated_at
+                updated_at,
+                stock_number
             } = vehicleData;
 
 
@@ -333,6 +334,10 @@ class InventoryModel {
             addUpdateField('carfax_link', carfax_link);
             addUpdateField('location', location);
             addUpdateField('body_type', body_type);
+            addUpdateField('stock_number', stock_number);
+            addUpdateField('created_at', created_at);
+            addUpdateField('updated_at', updated_at);
+            
             if (updateFields.length > 0) {
                 const updateQuery = `
                     UPDATE vehicles
@@ -539,6 +544,7 @@ class InventoryModel {
                 v.carfax_link,
                 v.created_at,
                 v.updated_at,
+                v.stock_number,
                 COALESCE(
                     (SELECT image_urls[primary_image_index + 1] FROM VEHICLE_IMAGES vi WHERE vi.vehicle_id = v.vehicle_id AND vi.is_primary = TRUE LIMIT 1),
                     (SELECT image_urls[1] FROM VEHICLE_IMAGES vi WHERE vi.vehicle_id = v.vehicle_id LIMIT 1)
@@ -617,6 +623,7 @@ class InventoryModel {
                 carfax_link: row.carfax_link,
                 created_at: row.created_at,
                 updated_at: row.updated_at,
+                stock_number: row.stock_number,
             }));
 
             const countResult = await client.query(countQuery, values);
