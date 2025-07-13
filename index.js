@@ -10,6 +10,7 @@ const vehicleRoutes = require('./routes/vehicleRoutes');
 const auctionRoutes = require('./routes/auctionRoutes');
 const authRoutes = require('./routes/authRoutes');
 const vehicleSalesRoutes = require('./routes/vehicleSalesRoutes');
+const paymentRoutes = require('./routes/paymentRoutes');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -35,7 +36,8 @@ app.use('/vehicles', vehicleRoutes);
 app.use('/auction-tracker', auctionRoutes);
 app.use('/auth', authRoutes);
 app.use('/sales', vehicleSalesRoutes);
- 
+app.use('/payments', paymentRoutes);
+
 // Health checks
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', message: 'Server is running' });
