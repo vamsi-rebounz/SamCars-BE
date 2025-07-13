@@ -298,11 +298,21 @@ CREATE INDEX idx_service_history_vehicle ON SERVICE_HISTORY(vehicle_id);
 
 
 -- Vehicle Sales and Auctions
+DROP TABLE IF EXISTS VEHICLE_SALES;
+
 CREATE TABLE VEHICLE_SALES (
     sale_id SERIAL PRIMARY KEY,
     vehicle_id INTEGER NOT NULL REFERENCES VEHICLES(vehicle_id) ON DELETE RESTRICT,
     seller_id INTEGER NOT NULL REFERENCES USERS(user_id) ON DELETE RESTRICT,
-    buyer_id INTEGER NOT NULL REFERENCES USERS(user_id) ON DELETE RESTRICT,
+
+    -- Optional foreign key (nullable)
+    buyer_id INTEGER REFERENCES USERS(user_id) ON DELETE RESTRICT,
+
+    -- For guest buyer info (if buyer_id is null)
+    buyer_name VARCHAR(100),
+    buyer_email VARCHAR(255),
+    buyer_phone VARCHAR(20),
+
     sale_price DECIMAL(10, 2) NOT NULL CHECK (sale_price > 0),
     sale_date DATE NOT NULL DEFAULT CURRENT_DATE,
     asking_price DECIMAL(10, 2) NOT NULL CHECK (asking_price > 0),
@@ -310,8 +320,14 @@ CREATE TABLE VEHICLE_SALES (
     preferred_contact_method contact_method,
     vehicle_description TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    -- Constraint: At least buyer_id OR guest info must be present
+    CHECK (
+        buyer_id IS NOT NULL OR (buyer_name IS NOT NULL AND buyer_email IS NOT NULL)
+    )
 );
+
 
 CREATE TABLE AUCTION_VEHICLES (
     auction_id SERIAL PRIMARY KEY,
