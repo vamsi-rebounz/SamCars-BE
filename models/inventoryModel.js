@@ -333,11 +333,6 @@ class InventoryModel {
             addUpdateField('carfax_link', carfax_link);
             addUpdateField('location', location);
             addUpdateField('body_type', body_type);
-            addUpdateField('features', features);
-            addUpdateField('is_featured', is_featured);
-            addUpdateField('carfax_link', carfax_link);
-            addUpdateField('created_at', created_at);
-            addUpdateField('updated_at', updated_at);
             if (updateFields.length > 0) {
                 const updateQuery = `
                     UPDATE vehicles

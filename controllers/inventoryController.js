@@ -64,6 +64,9 @@ class InventoryController {
     static async updateVehicle(req, res) {
         try {
             const { id } = req.query;
+            
+            console.log('Update vehicle request body:', req.body);
+            console.log('Update vehicle files:', req.files);
 
             const vehicleData = {
                 make: req.body.make,
@@ -83,11 +86,13 @@ class InventoryController {
                 status: req.body.status,
                 description: req.body.description,
                 tags: req.body.tags ? JSON.parse(req.body.tags) : undefined,
-                features: req.body.features ? JSON.parse(req.body.features) : undefined,
                 carfax_link: req.body.carfax_link,
                 location: req.body.location,
-                body_type: req.body.body_type
+                body_type: req.body.body_type,
+                stock_number: req.body.stock_number
             };
+
+            console.log('Processed vehicleData for update:', vehicleData);
 
             // const validationError = validateVehicleData(vehicleData);
             // if (validationError) {
