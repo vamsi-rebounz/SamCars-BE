@@ -21,7 +21,8 @@ class AuctionController {
             make: req.body.make,
             model: req.body.model,
             year: parseInt(req.body.year),
-            price: parseFloat(req.body.price),
+            // price: parseFloat(req.body.price),
+            price: parseFloat(req.body.list_price),
             mileage: req.body.mileage ? parseInt(req.body.mileage) : null,
             vin: req.body.vin,
             exterior_color: req.body.exterior_color,
@@ -290,7 +291,6 @@ class AuctionController {
      */
     static async getAuctionVehicles(req, res) {
         try {
-            // Parse query parameters with default values
             const limit = parseInt(req.query.limit) || 10;
             const page = parseInt(req.query.page) || 1;
             const search = req.query.search ? String(req.query.search).trim() : null;
@@ -300,20 +300,20 @@ class AuctionController {
     
             const offset = (page - 1) * limit;
     
-            // Basic validation for parameters
             if (limit <= 0 || page <= 0) {
                 return res.status(400).json({ status: "error", message: "Limit and page must be positive integers." });
             }
+    
             if (sort_order !== 'ASC' && sort_order !== 'DESC') {
                 return res.status(400).json({ status: "error", message: "sort_order must be 'asc' or 'desc'." });
             }
+    
             if (status && !Object.values(VEHICLE_STATUSES).includes(status)) {
-                 return res.status(400).json({
+                return res.status(400).json({
                     status: "error",
                     message: `Invalid status: ${status}. Allowed: ${Object.values(VEHICLE_STATUSES).join(', ')}`
                 });
             }
-    
     
             const { vehicles, totalItems } = await AuctionModel.fetchAuctionVehicles({
                 limit,
@@ -328,7 +328,6 @@ class AuctionController {
             const hasNext = page < totalPages;
             const hasPrev = page > 1;
     
-            // Format the response according to the specified structure
             const formattedVehicles = vehicles.map(vehicle => ({
                 auction_id: vehicle.auctionId.toString(),
                 vehicle_id: vehicle.vehicleId.toString(),
@@ -336,9 +335,9 @@ class AuctionController {
                 model: vehicle.model,
                 year: vehicle.year.toString(),
                 vin: vehicle.vin,
-                purchase_date: vehicle.purchaseDate.toISOString().split('T')[0], // Format date as YYYY-MM-DD
-                // Convert string numbers to float before calling toFixed, handle nulls
+                purchase_date: vehicle.purchaseDate.toISOString().split('T')[0],
                 purchase_price: vehicle.purchasePrice ? parseFloat(vehicle.purchasePrice).toFixed(2) : null,
+                additional_costs: vehicle.additionalCosts ? parseFloat(vehicle.additionalCosts).toFixed(2) : null,
                 total_investment: vehicle.totalInvestment ? parseFloat(vehicle.totalInvestment).toFixed(2) : null,
                 list_price: vehicle.listPrice ? parseFloat(vehicle.listPrice).toFixed(2) : null,
                 sold_price: vehicle.soldPrice ? parseFloat(vehicle.soldPrice).toFixed(2) : null,
@@ -347,7 +346,22 @@ class AuctionController {
                 created_at: vehicle.createdAt.toISOString(),
                 updated_at: vehicle.updatedAt.toISOString(),
                 images: vehicle.imageUrls || [],
-                carfax_link: vehicle.carfaxLink,
+                image_url: vehicle.imageUrls?.[vehicle.primaryImageIndex || 0] || null,
+                carfax_link: vehicle.carfaxLink || `https://www.carfax.com/vehicle/${vehicle.vin}`,
+                tags: vehicle.tags || [],
+                features: vehicle.features || [],
+                price: vehicle.listPrice ? parseFloat(vehicle.listPrice).toFixed(2) : null,
+                mileage: vehicle.mileage,
+                exterior_color: vehicle.exterior_color,
+                interior_color: vehicle.interior_color,
+                transmission: vehicle.transmission,
+                fuel_type: vehicle.fuel_type,
+                body_type: vehicle.body_type,
+                engine: vehicle.engine,
+                condition: vehicle.condition,
+                stock_number: vehicle.stock_number,
+                location: vehicle.location,
+                description: vehicle.description
             }));
     
             res.status(200).json({
@@ -368,7 +382,8 @@ class AuctionController {
             console.error('Error in getAuctionVehicles controller:', error);
             res.status(500).json({ status: "error", message: error.message || "Failed to fetch auction vehicles." });
         }
-    };
+    }
+    
 
     /**
      * Fetches auction dashboard summary statistics.
