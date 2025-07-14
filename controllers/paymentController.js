@@ -2,13 +2,19 @@
 const Stripe = require('stripe');
 const stripe = Stripe(process.env.STRIPE_SECRET_KEY);
 const pool = require('../config/db');
+const VehicleModel = require('../models/vehicleModel');
 
 class PaymentController {
   // Create checkout session (same as before)
   async createCheckoutSession(req, res) {
-    const { vehicleId: vehicle_id, price, vehicleName: vehicle_name, userId: user_id } = req.body;
-    if (!vehicle_id || !price || !vehicle_name) {
+    const { vehicle_id, user_id: user_id } = req.body;
+    if (!vehicle_id ) {
       return res.status(400).json({ error: 'Missing required fields' });
+    }
+
+    const vehicle = await VehicleModel.getVehicleById(vehicle_id);
+    if (!vehicle) {
+      return res.status(404).json({ error: 'Vehicle not found' });
     }
 
     try {
@@ -18,10 +24,10 @@ class PaymentController {
           price_data: {
             currency: 'usd',
             product_data: {
-              name: `Hold Payment for ${vehicle_name}`,
-              metadata: { vehicleId: vehicle_id, userId: user_id },
+              name: `Hold Payment for ${vehicle.make} ${vehicle.model} ${vehicle.year}`,
+              metadata: { vehicle_id, user_id },
             },
-            unit_amount: price * 100,
+            unit_amount: vehicle.price * 0.05,
           },
           quantity: 1,
         }],
