@@ -504,7 +504,7 @@ class InventoryModel {
         const parsedLimit = parseInt(limit);
         const parsedPage = parseInt(page);
         const offset = (parsedPage - 1) * parsedLimit;
-
+    
         const allowedSortFields = {
             date_added: 'di.created_at',
             price: 'v.price',
@@ -512,16 +512,16 @@ class InventoryModel {
             mileage: 'v.mileage',
             make: 'vm.name'
         };
-
+    
         if (!(sortBy in allowedSortFields)) {
             throw new Error('Invalid sort_by field.');
         }
-
+    
         const orderByClause = `${allowedSortFields[sortBy]} ${sortOrder.toUpperCase()}`;
-
+    
         const { whereClause, values, paramIndex } = buildWhereClauseForInventory({ search, status, category });
-
-        let vehicleQuery = `
+    
+        const vehicleQuery = `
             SELECT
                 v.vehicle_id AS id,
                 vm.name AS make,
@@ -545,11 +545,12 @@ class InventoryModel {
                 v.created_at,
                 v.updated_at,
                 v.stock_number,
-                COALESCE(
-                    (SELECT image_urls[primary_image_index + 1] FROM VEHICLE_IMAGES vi WHERE vi.vehicle_id = v.vehicle_id AND vi.is_primary = TRUE LIMIT 1),
-                    (SELECT image_urls[1] FROM VEHICLE_IMAGES vi WHERE vi.vehicle_id = v.vehicle_id LIMIT 1)
-                ) AS image_url,
-                v.location,
+                (
+                    SELECT vi.image_urls
+                    FROM VEHICLE_IMAGES vi
+                    WHERE vi.vehicle_id = v.vehicle_id
+                    LIMIT 1
+                ) AS image_urls,
                 ARRAY(
                     SELECT vt.name
                     FROM VEHICLE_TAG_MAPPING vtm
@@ -570,7 +571,7 @@ class InventoryModel {
             ORDER BY ${orderByClause}
             LIMIT $${paramIndex} OFFSET $${paramIndex + 1};
         `;
-
+    
         const countQuery = `
             SELECT COUNT(*)
             FROM VEHICLES v
@@ -578,7 +579,7 @@ class InventoryModel {
             JOIN VEHICLE_MODELS vmod ON v.model_id = vmod.model_id
             ${whereClause};
         `;
-
+    
         const filterStatsQuery = `
             SELECT
               COUNT(*) FILTER (WHERE v.status = 'available') AS total_available,
@@ -587,17 +588,26 @@ class InventoryModel {
               COUNT(*) FILTER (WHERE v.body_type = 'suv') AS suv_count,
               COUNT(*) FILTER (WHERE v.body_type = 'truck') AS truck_count,
               COUNT(*) FILTER (WHERE v.fuel_type = 'electric') AS electric_count,
-              COUNT(*) FILTER (WHERE EXISTS (SELECT 1 FROM VEHICLE_TAG_MAPPING vtm JOIN VEHICLE_TAGS vt ON vtm.tag_id = vt.tag_id WHERE vtm.vehicle_id = v.vehicle_id AND vt.name = 'luxury')) AS luxury_count,
-              COUNT(*) FILTER (WHERE EXISTS (SELECT 1 FROM VEHICLE_TAG_MAPPING vtm JOIN VEHICLE_TAGS vt ON vtm.tag_id = vt.tag_id WHERE vtm.vehicle_id = v.vehicle_id AND vt.name = 'compact')) AS compact_count
+              COUNT(*) FILTER (WHERE EXISTS (
+                  SELECT 1 FROM VEHICLE_TAG_MAPPING vtm
+                  JOIN VEHICLE_TAGS vt ON vtm.tag_id = vt.tag_id
+                  WHERE vtm.vehicle_id = v.vehicle_id AND vt.name = 'luxury'
+              )) AS luxury_count,
+              COUNT(*) FILTER (WHERE EXISTS (
+                  SELECT 1 FROM VEHICLE_TAG_MAPPING vtm
+                  JOIN VEHICLE_TAGS vt ON vtm.tag_id = vt.tag_id
+                  WHERE vtm.vehicle_id = v.vehicle_id AND vt.name = 'compact'
+              )) AS compact_count
             FROM VEHICLES v
             JOIN VEHICLE_MAKES vm ON v.make_id = vm.make_id
             JOIN VEHICLE_MODELS vmod ON v.model_id = vmod.model_id
             ${whereClause};
         `;
-
+    
         const client = await pool.connect();
         try {
             const vehiclesResult = await client.query(vehicleQuery, [...values, parsedLimit, offset]);
+    
             const vehicles = vehiclesResult.rows.map(row => ({
                 id: row.id,
                 make: row.make,
@@ -617,22 +627,22 @@ class InventoryModel {
                 location: row.location,
                 description: row.description,
                 tags: row.tags || [],
-                features: row.features,
-                // is_featured: row.is_featured,
-                image_url: row.image_url,
+                features: row.features || [],
+                image_url: Array.isArray(row.image_urls) && row.image_urls.length > 0 ? row.image_urls[0] : null,
+                images: Array.isArray(row.image_urls) ? row.image_urls : [],
                 carfax_link: row.carfax_link,
                 created_at: row.created_at,
                 updated_at: row.updated_at,
-                stock_number: row.stock_number,
+                stock_number: row.stock_number
             }));
-
+    
             const countResult = await client.query(countQuery, values);
             const totalItems = parseInt(countResult.rows[0].count);
             const totalPages = Math.ceil(totalItems / parsedLimit);
-
+    
             const filterStatsResult = await client.query(filterStatsQuery, values);
             const stats = filterStatsResult.rows[0];
-
+    
             return {
                 vehicles,
                 pagination: {
@@ -660,6 +670,7 @@ class InventoryModel {
             client.release();
         }
     }
+    
 
     /**
      * Deletes a vehicle and all its associated data from the database
