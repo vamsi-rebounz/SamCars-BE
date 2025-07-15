@@ -35,6 +35,8 @@ class InventoryModel {
                 carfax_link = null, // Default to null if not provided
                 fuel_type,
                 location,
+                stock_number,
+                engine,
             } = vehicleData;
     
             // 1. First check if make exists, if not create it
@@ -76,13 +78,13 @@ class InventoryModel {
                 `INSERT INTO VEHICLES (
                     make_id, model_id, year, price, mileage, vin,
                     exterior_color, interior_color, transmission,
-                    body_type, description, condition, status, carfax_link, fuel_type, location
-                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+                    body_type, description, condition, status, carfax_link, fuel_type, location, stock_number, engine
+                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
                 RETURNING vehicle_id`,
                 [
                     make_id, model_id, year, price, mileage, vin,
                     exterior_color, interior_color, transmission,
-                    body_type, description, condition, status, carfax_link, fuel_type, location
+                    body_type, description, condition, status, carfax_link, fuel_type, location, stock_number, engine
                 ]
             );
     

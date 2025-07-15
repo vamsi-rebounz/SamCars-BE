@@ -32,6 +32,8 @@ class VehicleModel {
                     v.description,
                     v.is_featured as featured,
                     v.carfax_link,
+                    v.stock_number,
+                    v.location,
                     CASE
                         WHEN v.status = 'available' THEN true
                         ELSE false
