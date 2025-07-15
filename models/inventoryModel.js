@@ -197,22 +197,28 @@ class InventoryModel {
      * @param {number} vehicle_id - The ID of the vehicle to update.
      * @param {object} vehicleData - Updated data for the vehicle.
      * @param {Array<object>} files - Array of new image files to upload.
+     * @param {Array<string>} imagesToDelete - Array of image URLs to delete.
      * @returns {Promise<void>}
      */
-    static async updateVehicle(vehicle_id, vehicleData, files) {
+    static async updateVehicle(vehicle_id, vehicleData, files, imagesToDelete = []) {
+        console.log('InventoryModel.updateVehicle called with:', { vehicle_id, vehicleData, filesCount: files?.length, imagesToDelete });
         const client = await pool.connect();
         try {
             await client.query('BEGIN');
+            console.log('Database transaction started');
 
             // 1. Check if vehicle exists
+            console.log('Checking if vehicle exists with ID:', vehicle_id);
             const vehicleCheck = await client.query(
                 'SELECT vehicle_id FROM vehicles WHERE vehicle_id = $1',
                 [vehicle_id]
             );
+            console.log('Vehicle check result:', vehicleCheck.rows);
 
             if (vehicleCheck.rows.length === 0) {
                 throw new Error('Vehicle not found');
             }
+            console.log('Vehicle found, proceeding with update');
 
             const {
                 make,
@@ -329,14 +335,13 @@ class InventoryModel {
             addUpdateField('condition', condition);
             addUpdateField('is_featured', is_featured);
             addUpdateField('status', status);
-            addUpdateField('updated_at', new Date());
             addUpdateField('description', description);
             addUpdateField('carfax_link', carfax_link);
             addUpdateField('location', location);
             addUpdateField('body_type', body_type);
             addUpdateField('stock_number', stock_number);
             addUpdateField('created_at', created_at);
-            addUpdateField('updated_at', updated_at);
+            addUpdateField('updated_at', updated_at || new Date());
             
             if (updateFields.length > 0) {
                 const updateQuery = `
@@ -350,6 +355,10 @@ class InventoryModel {
 
             // 4. Handle features update if provided
             if (features !== undefined) { // Check if features array is provided
+                // PRODUCTION: Ensure features is always an array (controller must guarantee this)
+                if (!Array.isArray(features)) {
+                    throw new Error('features must be an array. Controller should ensure this.');
+                }
                 // Remove existing feature mappings
                 await client.query(
                     'DELETE FROM vehicle_feature_mapping WHERE vehicle_id = $1',
@@ -385,30 +394,44 @@ class InventoryModel {
                 }
             }
 
-            // 5. Handle image updates if new files are provided
-            if (files && files.length > 0) {
-                // Fetch current image URLs
-                const currentImages = await client.query(
-                    'SELECT image_urls FROM vehicle_images WHERE vehicle_id = $1',
-                    [vehicle_id]
-                );
+            // 5. Handle image updates
+            const currentImages = await client.query(
+                'SELECT image_urls, image_metadata FROM vehicle_images WHERE vehicle_id = $1',
+                [vehicle_id]
+            );
 
-                if (currentImages.rows.length > 0 && currentImages.rows[0].image_urls) {
-                    const oldImageUrls = currentImages.rows[0].image_urls;
+            let currentImageUrls = [];
+            let currentImageMetadata = [];
 
-                    // Delete each old image from Firebase
-                    for (const url of oldImageUrls) {
-                        await deleteFromFirebase(url);
-                    }
+            if (currentImages.rows.length > 0) {
+                currentImageUrls = currentImages.rows[0].image_urls || [];
+                const meta = currentImages.rows[0].image_metadata;
+                if (meta) {
+                    currentImageMetadata = typeof meta === 'string' ? JSON.parse(meta) : meta;
+                } else {
+                    currentImageMetadata = [];
+                }
+            }
 
-                    // Delete existing image records from the DB
-                    await client.query(
-                        'DELETE FROM vehicle_images WHERE vehicle_id = $1',
-                        [vehicle_id]
-                    );
+            // Handle image deletions
+            if (imagesToDelete && imagesToDelete.length > 0) {
+                console.log('Deleting images:', imagesToDelete);
+                
+                // Delete specified images from Firebase
+                for (const urlToDelete of imagesToDelete) {
+                    await deleteFromFirebase(urlToDelete);
                 }
 
-                // Upload new images
+                // Remove deleted images from arrays
+                currentImageUrls = currentImageUrls.filter(url => !imagesToDelete.includes(url));
+                currentImageMetadata = currentImageMetadata.filter(metadata => !imagesToDelete.includes(metadata.url));
+            }
+
+            // Handle new image uploads
+            if (files && files.length > 0) {
+                console.log('Uploading new images:', files.length);
+                
+                // Upload new images to Firebase
                 const uploadPromises = files.map(file =>
                     uploadToFirebase(file.buffer, file.originalname, file.mimetype)
                 );
@@ -423,25 +446,47 @@ class InventoryModel {
                     url: uploadedImageUrls[index]
                 }));
 
-                // Insert new image URLs and metadata into DB
+                // Add new images to existing arrays
+                currentImageUrls = [...currentImageUrls, ...uploadedImageUrls];
+                currentImageMetadata = [...currentImageMetadata, ...newImageMetadata];
+            }
+
+            // Update or insert image records in DB
+            if (currentImageUrls.length > 0) {
+                if (currentImages.rows.length > 0) {
+                    // Update existing record
+                    await client.query(
+                        `UPDATE vehicle_images 
+                         SET image_urls = $1, image_metadata = $2 
+                         WHERE vehicle_id = $3`,
+                        [currentImageUrls, JSON.stringify(currentImageMetadata), vehicle_id]
+                    );
+                } else {
+                    // Insert new record
+                    await client.query(
+                        `INSERT INTO vehicle_images (
+                            vehicle_id,
+                            image_urls,
+                            image_metadata,
+                            primary_image_index
+                        ) VALUES ($1, $2, $3, $4)`,
+                        [vehicle_id, currentImageUrls, JSON.stringify(currentImageMetadata), 0]
+                    );
+                }
+            } else {
+                // No images left, delete the record
                 await client.query(
-                    `INSERT INTO vehicle_images (
-                        vehicle_id,
-                        image_urls,
-                        image_metadata,
-                        primary_image_index
-                    ) VALUES ($1, $2, $3, $4)`,
-                    [
-                        vehicle_id,
-                        uploadedImageUrls,
-                        JSON.stringify(newImageMetadata),
-                        0 // First image is primary by default for new uploads
-                    ]
+                    'DELETE FROM vehicle_images WHERE vehicle_id = $1',
+                    [vehicle_id]
                 );
             }
 
             // 6. Handle tags update if provided
             if (tags !== undefined) { // Check if tags array is provided
+                // PRODUCTION: Ensure tags is always an array (controller must guarantee this)
+                if (!Array.isArray(tags)) {
+                    throw new Error('tags must be an array. Controller should ensure this.');
+                }
                 // Remove existing tag mappings
                 await client.query(
                     'DELETE FROM vehicle_tag_mapping WHERE vehicle_id = $1',

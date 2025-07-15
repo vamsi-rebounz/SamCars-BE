@@ -45,7 +45,8 @@ class InventoryController {
 
             res.status(201).json({
                 message: 'Vehicle added successfully',
-                vehicle_id: vehicle_id
+                vehicle_id: vehicle_id,
+                received_files: req.files // Debug: return received files
             });
 
         } catch (error) {
@@ -68,44 +69,98 @@ class InventoryController {
             
             console.log('Update vehicle request body:', req.body);
             console.log('Update vehicle files:', req.files);
+            console.log('Features type:', typeof req.body.features, 'Features value:', req.body.features);
+            console.log('Tags type:', typeof req.body.tags, 'Tags value:', req.body.tags);
+            
+            // Debug all fields that might be objects
+            Object.keys(req.body).forEach(key => {
+                const value = req.body[key];
+                console.log(`Field ${key}: type=${typeof value}, value=`, value);
+                if (typeof value === 'object' && value !== null) {
+                    console.log(`Field ${key} is an object:`, JSON.stringify(value));
+                }
+            });
 
-            const vehicleData = {
-                make: req.body.make,
-                model: req.body.model,
-                year: req.body.year ? parseInt(req.body.year) : undefined,
-                price: req.body.price ? parseFloat(req.body.price) : undefined,
-                mileage: req.body.mileage ? parseInt(req.body.mileage) : undefined,
-                vin: req.body.vin,
-                exterior_color: req.body.exterior_color,
-                interior_color: req.body.interior_color,
-                transmission: req.body.transmission,
-                fuel_type: req.body.fuel_type,
-                engine: req.body.engine,
-                condition: req.body.condition,
-                features: req.body.features ? JSON.parse(req.body.features) : undefined,
-                is_featured: req.body.is_featured !== undefined ? (req.body.is_featured === 'true') : undefined, // Convert string to boolean
-                status: req.body.status,
-                description: req.body.description,
-                tags: req.body.tags ? JSON.parse(req.body.tags) : undefined,
-                carfax_link: req.body.carfax_link,
-                location: req.body.location,
-                body_type: req.body.body_type,
-                stock_number: req.body.stock_number
-            };
+            let vehicleData;
+            try {
+                vehicleData = {
+                    make: req.body.make,
+                    model: req.body.model,
+                    year: req.body.year ? parseInt(req.body.year) : undefined,
+                    price: req.body.price ? parseFloat(req.body.price) : undefined,
+                    mileage: req.body.mileage ? parseInt(req.body.mileage) : undefined,
+                    vin: req.body.vin,
+                    exterior_color: req.body.exterior_color,
+                    interior_color: req.body.interior_color,
+                    transmission: req.body.transmission,
+                    fuel_type: req.body.fuel_type,
+                    engine: req.body.engine,
+                    condition: req.body.condition,
+                    features: (() => {
+                        try {
+                            return req.body.features ? (typeof req.body.features === 'string' ? JSON.parse(req.body.features) : req.body.features) : [];
+                        } catch (error) {
+                            console.error('Error parsing features:', error, 'Features value:', req.body.features);
+                            return [];
+                        }
+                    })(),
+                    is_featured: req.body.is_featured !== undefined ? (req.body.is_featured === 'true') : undefined, // Convert string to boolean
+                    status: req.body.status,
+                    description: req.body.description,
+                    tags: (() => {
+                        try {
+                            return req.body.tags ? (typeof req.body.tags === 'string' ? JSON.parse(req.body.tags) : req.body.tags) : [];
+                        } catch (error) {
+                            console.error('Error parsing tags:', error, 'Tags value:', req.body.tags);
+                            return [];
+                        }
+                    })(),
+                    carfax_link: req.body.carfax_link,
+                    location: req.body.location,
+                    body_type: req.body.body_type,
+                    stock_number: req.body.stock_number
+                };
+            } catch (error) {
+                console.error('Error constructing vehicleData:', error);
+                console.error('Request body that caused error:', req.body);
+                return res.status(400).json({
+                    status: 'error',
+                    message: 'Invalid data format',
+                    details: error.message
+                });
+            }
+
+            // Parse images to delete
+            let imagesToDelete = [];
+            if (req.body.imagesToDelete) {
+                try {
+                    console.log('imagesToDelete type:', typeof req.body.imagesToDelete, 'value:', req.body.imagesToDelete);
+                    imagesToDelete = typeof req.body.imagesToDelete === 'string' ? JSON.parse(req.body.imagesToDelete) : req.body.imagesToDelete;
+                    console.log('Parsed imagesToDelete:', imagesToDelete);
+                } catch (error) {
+                    console.error('Error parsing imagesToDelete:', error, 'Value:', req.body.imagesToDelete);
+                    imagesToDelete = [];
+                }
+            }
 
             console.log('Processed vehicleData for update:', vehicleData);
+            console.log('Images to delete:', imagesToDelete);
+            console.log('Vehicle ID (parsed):', parseInt(id), 'Type:', typeof parseInt(id));
 
             // const validationError = validateVehicleData(vehicleData);
             // if (validationError) {
             //     return res.status(400).json({ error: validationError });
             // }
 
-            await InventoryModel.updateVehicle(id, vehicleData, req.files);
+            console.log('Calling InventoryModel.updateVehicle...');
+            await InventoryModel.updateVehicle(parseInt(id), vehicleData, req.files, imagesToDelete);
+            console.log('InventoryModel.updateVehicle completed successfully');
 
             res.status(200).json({
                 status: 'success',
                 message: 'Vehicle updated successfully',
-                vehicle_id: id
+                vehicle_id: id,
+                received_files: req.files // Debug: return received files
             });
 
         } catch (error) {
