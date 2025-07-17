@@ -8,9 +8,9 @@ class VehicleController {
      */
     static async getVehicleById(req, res) {
         try {
-            const { id } = req.query;
+            const { id } = req.params;
 
-            // Input validation (optional, but good practice for public APIs)
+            // Input validation
             if (!id || isNaN(parseInt(id))) {
                 return res.status(400).json({
                     status: 'error',
@@ -34,11 +34,11 @@ class VehicleController {
             });
 
         } catch (error) {
-            console.error('Error fetching vehicle in controller:', error); // Log the error for debugging
+            console.error('Error fetching vehicle in controller:', error);
             res.status(500).json({
                 status: 'error',
                 message: 'Failed to retrieve vehicle details due to a server error.',
-                details: error.message // Include error message for more context in development
+                details: process.env.NODE_ENV === 'development' ? error.message : undefined
             });
         }
     }

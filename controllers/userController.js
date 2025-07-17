@@ -121,126 +121,139 @@ const UserController = {
 
     // Fetch a user by ID
     async fetchUserById(req, res) {
-        const { id } = req.query;
-
-        if (!id) {
-            return res.status(400).json({ success: false, error_code: 'MISSING_ID', message: 'User ID is required' });
-        }
-
         try {
-            const user = await UserModel.getUserById(id);
+            const userId = req.params.userId || req.user.userId;
+
+            const user = await UserModel.findById(userId);
             if (!user) {
-                return res.status(404).json({ success: false, error_code: 'USER_NOT_FOUND', message: 'User not found' });
+                return res.status(404).json({ 
+                    status: 'error',
+                    message: 'User not found' 
+                });
             }
-            res.json({ success: true, user });
+
+            // Remove sensitive information
+            const { password, ...userInfo } = user;
+
+            res.json({ 
+                status: 'success',
+                data: userInfo 
+            });
         } catch (error) {
-            console.error('Error in fetchUserById controller:', error);
-            res.status(500).json({ success: false, error_code: 'SERVER_ERROR', message: 'Could not fetch user details' });
+            console.error('Error in fetchUserById:', error);
+            res.status(500).json({ 
+                status: 'error',
+                message: 'Failed to fetch user details' 
+            });
         }
     },
 
     // Update user profile
     async updateUserProfile(req, res) {
         try {
-            const userId = req.user.user_id; // From JWT token
-            const {
-                first_name,
-                last_name,
-                email,
-                phone,
-                current_password,
-                new_password
-            } = req.fields;
+            const userId = req.user.userId;
+            const { firstName, lastName, phone } = req.body;
 
-            // Validate required fields
-            if (!first_name || !last_name || !email) {
-                return res.status(400).json({ 
-                    success: false, 
-                    message: 'First name, last name, and email are required.' 
+            const updatedUser = await UserModel.updateProfile(userId, {
+                firstName,
+                lastName,
+                phone
+            });
+
+            if (!updatedUser) {
+                return res.status(404).json({ 
+                    status: 'error',
+                    message: 'User not found' 
                 });
             }
 
-            // Validate email format
-            if (!/\S+@\S+\.\S+/.test(email)) {
-                return res.status(400).json({ 
-                    success: false, 
-                    message: 'Invalid email format.' 
-                });
-            }
+            // Remove sensitive information
+            const { password, ...userInfo } = updatedUser;
 
-            // If changing password, validate current password
-            if (new_password) {
-                if (!current_password) {
-                    return res.status(400).json({ 
-                        success: false, 
-                        message: 'Current password is required to change password.' 
-                    });
-                }
-
-                if (new_password.length < 8) {
-                    return res.status(400).json({ 
-                        success: false, 
-                        message: 'New password must be at least 8 characters long.' 
-                    });
-                }
-
-                // Verify current password
-                const currentUser = await UserModel.getUserByEmail(email);
-                if (!currentUser) {
-                    return res.status(404).json({ 
-                        success: false, 
-                        message: 'User not found.' 
-                    });
-                }
-
-                const passwordMatch = await bcrypt.compare(current_password, currentUser.password_hash);
-                if (!passwordMatch) {
-                    return res.status(401).json({ 
-                        success: false, 
-                        message: 'Current password is incorrect.' 
-                    });
-                }
-            }
-
-            // Update user profile
-            const updatedUser = await UserModel.updateUserProfile(userId, {
-                first_name,
-                last_name,
-                email,
-                phone,
-                new_password
+            res.json({ 
+                status: 'success',
+                data: userInfo,
+                message: 'Profile updated successfully' 
             });
-
-            res.json({
-                success: true,
-                message: 'Profile updated successfully.',
-                user: {
-                    id: updatedUser.user_id,
-                    email: updatedUser.email,
-                    first_name: updatedUser.first_name,
-                    last_name: updatedUser.last_name,
-                    role: updatedUser.role,
-                    phone: updatedUser.phone,
-                    updated_at: updatedUser.updated_at
-                }
-            });
-
         } catch (error) {
-            console.error('Error in updateUserProfile controller:', error);
-            if (error.message === 'Email already registered.') {
-                return res.status(409).json({ 
-                    success: false, 
-                    error_code: 'EMAIL_ALREADY_REGISTERED', 
-                    message: error.message 
-                });
-            }
+            console.error('Error in updateUserProfile:', error);
             res.status(500).json({ 
-                success: false, 
-                error_code: 'SERVER_ERROR', 
-                message: 'Failed to update profile.' 
+                status: 'error',
+                message: 'Failed to update profile' 
             });
         }
     },
+
+    // List all users (admin only)
+    async listUsers(req, res) {
+        try {
+            const page = parseInt(req.query.page) || 1;
+            const limit = parseInt(req.query.limit) || 10;
+            const role = req.query.role;
+
+            const result = await UserModel.listAll(page, limit, role);
+
+            res.json({
+                status: 'success',
+                data: {
+                    users: result.users.map(user => {
+                        const { password, ...userInfo } = user;
+                        return userInfo;
+                    }),
+                    pagination: {
+                        total: result.total,
+                        page: result.page,
+                        totalPages: result.totalPages
+                    }
+                }
+            });
+        } catch (error) {
+            console.error('Error in listUsers:', error);
+            res.status(500).json({ 
+                status: 'error',
+                message: 'Failed to fetch users list' 
+            });
+        }
+    },
+
+    // Update user status (admin only)
+    async updateUserStatus(req, res) {
+        try {
+            const { userId } = req.params;
+            const { isActive } = req.body;
+
+            if (typeof isActive !== 'boolean') {
+                return res.status(400).json({ 
+                    status: 'error',
+                    message: 'isActive must be a boolean value' 
+                });
+            }
+
+            const updatedUser = await UserModel.setActiveStatus(userId, isActive);
+            
+            if (!updatedUser) {
+                return res.status(404).json({ 
+                    status: 'error',
+                    message: 'User not found' 
+                });
+            }
+
+            // Remove sensitive information
+            const { password, ...userInfo } = updatedUser;
+
+            res.json({ 
+                status: 'success',
+                data: userInfo,
+                message: `User ${isActive ? 'activated' : 'deactivated'} successfully` 
+            });
+        } catch (error) {
+            console.error('Error in updateUserStatus:', error);
+            res.status(500).json({ 
+                status: 'error',
+                message: 'Failed to update user status' 
+            });
+        }
+    }
 };
 
 module.exports = UserController;

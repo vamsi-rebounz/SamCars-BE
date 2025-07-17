@@ -1,4 +1,5 @@
 const pool = require('../config/db');
+const InventoryModel = require('./inventoryModel');
 
 const VehicleSalesModel = {
   async recordSale(data) {
@@ -53,12 +54,8 @@ const VehicleSalesModel = {
         vehicle_description
       ]);
 
-      // Update vehicle status
-      await client.query(`
-        UPDATE VEHICLES
-        SET status = 'sold', updated_at = CURRENT_TIMESTAMP
-        WHERE vehicle_id = $1
-      `, [vehicle_id]);
+      // Update vehicle status using the new method
+      await InventoryModel.updateVehicleStatus(vehicle_id, 'sold', client);
 
       await client.query('COMMIT');
       return result.rows[0];

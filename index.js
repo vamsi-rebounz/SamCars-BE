@@ -1,6 +1,5 @@
 require('dotenv').config();
 const express = require('express');
-const formidable = require('express-formidable');
 const cors = require('cors');
  
 // Import routes
@@ -25,18 +24,18 @@ app.use(cors({
   credentials: true
 }));
  
-// Apply formidable only where needed (remove global use)
+// Global middleware for parsing JSON and URL-encoded bodies
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
  
 // Mount routes
-app.use('/users', formidable(), userRoutes);
-app.use('/inventory', inventoryRoutes);
-app.use('/vehicles', vehicleRoutes);
-app.use('/auction-tracker', auctionRoutes);
-app.use('/auth', authRoutes);
-app.use('/sales', vehicleSalesRoutes);
-app.use('/payments', paymentRoutes);
+app.use('/api/auth', authRoutes); // Mount auth routes first
+app.use('/api/users', userRoutes);
+app.use('/api/inventory', inventoryRoutes); // Use multer middleware in routes
+app.use('/api/vehicles', vehicleRoutes);
+app.use('/api/auction-tracker', auctionRoutes);
+app.use('/api/sales', vehicleSalesRoutes);
+app.use('/api/payments', paymentRoutes);
 
 // Health checks
 app.get('/health', (req, res) => {
@@ -47,10 +46,31 @@ app.get('/', (req, res) => {
   res.json({ message: 'SamCars API is running!' });
 });
  
-// Error handling
+// Error handling middleware
 app.use((err, req, res, next) => {
-  console.error(err.stack);
-  res.status(500).json({ error: 'Something went wrong!' });
+  console.error('Error:', err);
+  
+  // Handle specific error types
+  if (err.name === 'ValidationError') {
+    return res.status(400).json({ 
+      status: 'error',
+      message: err.message 
+    });
+  }
+  
+  if (err.name === 'UnauthorizedError') {
+    return res.status(401).json({ 
+      status: 'error',
+      message: 'Invalid token or not authenticated' 
+    });
+  }
+  
+  // Default error
+  res.status(500).json({ 
+    status: 'error',
+    message: 'Internal server error',
+    ...(process.env.NODE_ENV === 'development' && { error: err.message })
+  });
 });
  
 app.listen(PORT, () => {

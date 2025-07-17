@@ -31,7 +31,7 @@ class AuctionController {
             body_type: req.body.body_type,
             fuel_type: req.body.fuel_type,
             description: req.body.description,
-            status: req.body.status,
+            status: 'reserved', // Set status to 'reserved' before validation
             condition: req.body.condition,
             tags: req.body.tags ? (typeof req.body.tags === 'string' ? JSON.parse(req.body.tags) : req.body.tags) : [],
             features: req.body.features ? (typeof req.body.features === 'string' ? JSON.parse(req.body.features) : req.body.features) : [],
@@ -51,7 +51,8 @@ class AuctionController {
               additional_costs: parseFloat(req.body.additional_costs || 0),
               list_price: req.body.list_price ? parseFloat(req.body.list_price) : null,
               sold_price: req.body.sold_price ? parseFloat(req.body.sold_price) : null,
-              notes: req.body.notes
+              notes: req.body.notes,
+              status: 'reserved' // Set status for auction_vehicles table
           };
 
           // 1. Add the vehicle (including images and tags)
@@ -66,8 +67,8 @@ class AuctionController {
           auctionData.vehicle_id = vehicle_id;
           const auction_id = await AuctionModel.addAuctionPurchase(vehicle_id, auctionData);
 
-          //? 3. Update the vehicle status to 'auction'
-        //   await AuctionModel.updateVehicleStatus(vehicle_id, 'auction', client);
+          // 3. Update the vehicle status to 'reserved'
+          await AuctionModel.updateVehicleStatus(vehicle_id, 'reserved', client);
 
           await client.query('COMMIT'); // Commit the entire transaction
           res.status(201).json({
@@ -80,7 +81,23 @@ class AuctionController {
       } catch (error) {
           await client.query('ROLLBACK'); // Rollback if any part fails
           console.error('Error adding auction purchase:', error, '\nRequest body:', req.body, '\nFiles:', req.files);
-          res.status(500).json({ success: false, message: 'Failed to add auction purchase', error: error.message });
+          
+          let statusCode = 500;
+          let errorMessage = 'Failed to add auction purchase';
+          
+          if (error.message.includes('duplicate key')) {
+              statusCode = 409;
+              errorMessage = 'Vehicle already exists in auction';
+          } else if (error.message.includes('invalid status')) {
+              statusCode = 400;
+              errorMessage = 'Invalid vehicle status';
+          }
+          
+          res.status(statusCode).json({ 
+              success: false, 
+              message: errorMessage, 
+              error: error.message 
+          });
       } finally {
           client.release(); // Always release the client
       }
@@ -92,8 +109,9 @@ class AuctionController {
      * @param {Object} res - Express request object
      */
     static async updateAuctionPurchase(req, res) {
+        let client;
         try {
-            const client = await pool.connect();
+            client = await pool.connect();
             const { auction_id } = req.query;
             if (isNaN(auction_id)) {
                 return res.status(400).json({
@@ -123,7 +141,7 @@ class AuctionController {
                 make: req.body.make,
                 model: req.body.model,
                 year: parseInt(req.body.year),
-                price: parseFloat(req.body.price),
+                price: parseFloat(req.body.list_price), // Use list_price as the vehicle price
                 mileage: req.body.mileage ? parseInt(req.body.mileage) : null,
                 vin: req.body.vin,
                 exterior_color: req.body.exterior_color,
@@ -133,7 +151,7 @@ class AuctionController {
                 fuel_type: req.body.fuel_type,
                 description: req.body.description,
                 status: req.body.status,
-                condition : req.body.condition,
+                condition: req.body.condition,
                 tags: req.body.tags ? (typeof req.body.tags === 'string' ? JSON.parse(req.body.tags) : req.body.tags) : [],
                 features: req.body.features ? (typeof req.body.features === 'string' ? JSON.parse(req.body.features) : req.body.features) : [],
                 carfax_link: req.body.carfax_link,
@@ -142,18 +160,30 @@ class AuctionController {
             };
 
             // 2. Validate vehicle data
-            // const validationError = validateVehicleData(vehicleData);
-            // if (validationError) {
-            //     await client.query('ROLLBACK');
-            //     return res.status(400).json({ error: validationError });
-            // }
+            const validationError = validateVehicleData(vehicleData);
+            if (validationError) {
+                await client.query('ROLLBACK');
+                return res.status(400).json({ error: validationError });
+            }
+
+            // Parse images to delete
+            const imagesToDelete = req.body.images_to_delete 
+                ? JSON.parse(req.body.images_to_delete) 
+                : [];
+
+            // Parse existing images to keep
+            const existingImages = req.body.existing_images 
+                ? JSON.parse(req.body.existing_images)
+                : [];
 
             // 3. Update vehicle using existing implementation
             await InventoryModel.updateVehicle(
                 vehicleId, 
-                vehicleData, 
-                req.files, 
-                client // Pass the transaction client
+                vehicleData,
+                req.files || [], // Pass files array directly
+                client, // Pass the transaction client
+                imagesToDelete, // Pass imagesToDelete array
+                existingImages // Pass existingImages array
             );
 
             // 4. Prepare auction update data
@@ -193,34 +223,47 @@ class AuctionController {
 
             await client.query('COMMIT');
 
-            // 6. Fetch updated data
-            const updatedAuction = await pool.query(
-                'SELECT * FROM auction_vehicles WHERE auction_id = $1',
-                [auction_id]
-            );
-            const updatedVehicle = await pool.query(
-                'SELECT * FROM vehicles WHERE vehicle_id = $1',
-                [vehicleId]
-            );
+            // 6. Fetch updated data including images
+            const query = `
+                SELECT
+                    av.*,
+                    v.*,
+                    vi.image_urls AS images,
+                    vi.primary_image_index,
+                    ARRAY_REMOVE(ARRAY_AGG(DISTINCT vt.name), NULL) AS tags,
+                    ARRAY_REMOVE(ARRAY_AGG(DISTINCT vf.name), NULL) AS features
+                FROM auction_vehicles av
+                JOIN vehicles v ON av.vehicle_id = v.vehicle_id
+                LEFT JOIN vehicle_images vi ON v.vehicle_id = vi.vehicle_id
+                LEFT JOIN vehicle_tag_mapping vtm ON v.vehicle_id = vtm.vehicle_id
+                LEFT JOIN vehicle_tags vt ON vtm.tag_id = vt.tag_id
+                LEFT JOIN vehicle_feature_mapping vfm ON v.vehicle_id = vfm.vehicle_id
+                LEFT JOIN vehicle_features vf ON vfm.feature_id = vf.feature_id
+                WHERE av.auction_id = $1
+                GROUP BY av.auction_id, v.vehicle_id, vi.image_urls, vi.primary_image_index;
+            `;
+
+            const result = await client.query(query, [auction_id]);
 
             res.status(200).json({
                 status: "success",
                 message: "Auction purchase and vehicle updated successfully",
-                data: {
-                    auction: updatedAuction.rows[0],
-                    vehicle: updatedVehicle.rows[0]
-                }
+                data: result.rows[0]
             });
 
         } catch (error) {
-            await client.query('ROLLBACK');
+            if (client) {
+                await client.query('ROLLBACK');
+            }
             console.error('Error updating auction purchase:', error);
             res.status(500).json({
                 status: "error",
                 message: error.message || "Failed to update auction purchase"
             });
         } finally {
-            client.release();
+            if (client) {
+                client.release();
+            }
         }
     }
 
@@ -393,77 +436,215 @@ class AuctionController {
      */
     static async getAuctionDashboardSummary(req, res) {
         try {
-            let { date_from, date_to, status } = req.query; // Use 'let' to allow reassignment
+            // Get date range from query params or use defaults
+            const { start_date, end_date } = req.query;
 
-            // --- Set default dates if not provided ---
-            // Default `date_from` to a very early date if not provided
-            date_from = date_from ? String(date_from).trim() : '1900-01-01';
-
-            // Default `date_to` to the current date if not provided
-            const today = new Date();
-            const year = today.getFullYear();
-            const month = String(today.getMonth() + 1).padStart(2, '0'); // Months are 0-indexed
-            const day = String(today.getDate()).padStart(2, '0');
-            const defaultDateTo = `${year}-${month}-${day}`;
-            date_to = date_to ? String(date_to).trim() : defaultDateTo;
-            // --- End of default date setting ---
-
-            // Basic date format validation (YYYY-MM-DD)
-            const isValidDate = (dateString) => /^\d{4}-\d{2}-\d{2}$/.test(dateString) && !isNaN(new Date(dateString));
-            if (!isValidDate(date_from) || !isValidDate(date_to)) {
-                return res.status(400).json({
-                    status: "error",
-                    message: "Invalid date format. Dates must be in YYYY-MM-DD format."
-                });
+            // Validate date format
+            if (start_date && end_date) {
+                if (!AuctionController.isValidDate(start_date) || !AuctionController.isValidDate(end_date)) {
+                    return res.status(400).json({
+                        status: 'error',
+                        message: 'Invalid date format. Use YYYY-MM-DD'
+                    });
+                }
             }
 
-            // Ensure `date_from` is not after `date_to`
-            if (new Date(date_from) > new Date(date_to)) {
-                return res.status(400).json({
-                    status: "error",
-                    message: "date_from cannot be after date_to."
-                });
-            }
+            // Use default date range if not provided
+            const dateFrom = start_date || new Date(new Date().setMonth(new Date().getMonth() - 1)).toISOString().split('T')[0];
+            const dateTo = end_date || new Date().toISOString().split('T')[0];
 
-            // Validate status if provided against your enum
-            if (status && !Object.values(VEHICLE_STATUSES).includes(status)) {
-                 return res.status(400).json({
-                    status: "error",
-                    message: `Invalid status: ${status}. Allowed statuses are: ${!Object.values(VEHICLE_STATUSES).join(', ')}`
-                });
-            }
-
-            // Fetch summary statistics from the model
-            const summary = await AuctionModel.getAuctionSummaryStatistics({
-                date_from: date_from,
-                date_to: date_to,
-                status: status || null // Pass null if status is not provided
+            // Get dashboard statistics from the model
+            const dashboardStats = await AuctionModel.getDashboardStatistics({
+                date_from: dateFrom,
+                date_to: dateTo
             });
 
-            // Format the response according to the specified structure
-            res.status(200).json({
-                status: "success",
+            // Get recent transactions
+            const recentQuery = `
+                SELECT
+                    av.auction_id,
+                    av.purchase_date,
+                    av.purchase_price,
+                    av.additional_costs,
+                    av.sold_price,
+                    av.list_price,
+                    vm.name as make,
+                    vmo.name as model,
+                    v.year,
+                    v.status,
+                    v.vin,
+                    vi.image_urls[1] as primary_image,
+                    COALESCE(av.sold_price - (av.purchase_price + COALESCE(av.additional_costs, 0)), 0) as profit
+                FROM auction_vehicles av
+                JOIN vehicles v ON av.vehicle_id = v.vehicle_id
+                JOIN vehicle_makes vm ON v.make_id = vm.make_id
+                JOIN vehicle_models vmo ON v.model_id = vmo.model_id
+                LEFT JOIN vehicle_images vi ON v.vehicle_id = vi.vehicle_id
+                ORDER BY av.purchase_date DESC
+                LIMIT 10
+            `;
+
+            // Get profit by month
+            const profitByMonthQuery = `
+                SELECT
+                    DATE_TRUNC('month', av.purchase_date) as month,
+                    COUNT(*) as vehicles_purchased,
+                    COUNT(CASE WHEN v.status = 'sold' THEN 1 END) as vehicles_sold,
+                    COALESCE(SUM(av.purchase_price), 0) as total_purchase_amount,
+                    COALESCE(SUM(av.additional_costs), 0) as total_additional_costs,
+                    COALESCE(SUM(av.sold_price), 0) as total_sales_amount,
+                    COALESCE(SUM(av.sold_price - (av.purchase_price + COALESCE(av.additional_costs, 0))), 0) as profit
+                FROM auction_vehicles av
+                JOIN vehicles v ON av.vehicle_id = v.vehicle_id
+                WHERE av.purchase_date BETWEEN $1 AND $2
+                GROUP BY DATE_TRUNC('month', av.purchase_date)
+                ORDER BY month DESC
+                LIMIT 12
+            `;
+
+            // Execute recent transactions and profit by month queries
+            const [recentResult, profitByMonthResult] = await Promise.all([
+                pool.query(recentQuery),
+                pool.query(profitByMonthQuery, [dateFrom, dateTo])
+            ]);
+
+            res.json({
+                status: 'success',
                 data: {
-                    summary: {
-                        total_investment: {
-                            amount: summary.totalInvestment.toFixed(2), // Format to 2 decimal places
-                            currency: "USD" // Assuming USD as default currency
-                        },
-                        total_profit: {
-                            amount: summary.totalProfit.toFixed(2), // Format to 2 decimal places
-                            currency: "USD"
-                        },
-                        vehicles_purchased: summary.vehiclesPurchased,
-                        vehicles_sold: summary.vehiclesSold
-                    }
+                    summary: dashboardStats.summary,
+                    age_analysis: dashboardStats.age_analysis,
+                    recent_transactions: recentResult.rows,
+                    profit_by_month: profitByMonthResult.rows
                 }
             });
 
         } catch (error) {
-            console.error('Error in getAuctionDashboardSummary controller:', error);
+            console.error('Error fetching auction dashboard summary:', error);
+            res.status(500).json({
+                status: 'error',
+                message: 'Failed to fetch auction dashboard summary',
+                details: process.env.NODE_ENV === 'development' ? error.message : undefined
+            });
+        }
+    }
+
+    // Helper function to validate date format
+    static isValidDate(dateString) {
+        return /^\d{4}-\d{2}-\d{2}$/.test(dateString) && !isNaN(new Date(dateString));
+    }
+
+    /**
+     * Fetches detailed auction info by ID
+     * @param {object} req - Express request object
+     * @param {object} res - Express response object
+     */
+    static async getAuctionById(req, res) {
+        try {
+            const auctionId = parseInt(req.params.id, 10);
+            
+            // Validate auction ID
+            if (isNaN(auctionId) || auctionId <= 0) {
+                return res.status(400).json({
+                    status: "error",
+                    message: "Invalid auction ID",
+                    details: "Please provide a valid positive numeric auction ID"
+                });
+            }
+
+            // Get auction details including vehicle data
+            const query = `
+                SELECT
+                    av.auction_id,
+                    av.vehicle_id,
+                    vm.name AS make,
+                    vmo.name AS model,
+                    v.year,
+                    v.vin,
+                    v.price,
+                    v.mileage,
+                    v.exterior_color,
+                    v.interior_color,
+                    v.transmission,
+                    v.fuel_type,
+                    v.body_type,
+                    v.engine,
+                    v.condition,
+                    v.status AS vehicle_status,
+                    v.description,
+                    v.stock_number,
+                    v.location,
+                    v.carfax_link,
+                    av.purchase_date,
+                    av.purchase_price,
+                    av.additional_costs,
+                    av.list_price,
+                    av.sold_price,
+                    av.status,
+                    av.notes,
+                    av.created_at,
+                    av.updated_at,
+                    vi.image_urls AS images,
+                    vi.primary_image_index,
+                    ARRAY_REMOVE(ARRAY_AGG(DISTINCT vt.name), NULL) AS tags,
+                    ARRAY_REMOVE(ARRAY_AGG(DISTINCT vf.name), NULL) AS features
+                FROM
+                    AUCTION_VEHICLES av
+                JOIN VEHICLES v ON av.vehicle_id = v.vehicle_id
+                JOIN VEHICLE_MAKES vm ON v.make_id = vm.make_id
+                JOIN VEHICLE_MODELS vmo ON v.model_id = vmo.model_id
+                LEFT JOIN VEHICLE_IMAGES vi ON v.vehicle_id = vi.vehicle_id
+                LEFT JOIN VEHICLE_TAG_MAPPING vtm ON v.vehicle_id = vtm.vehicle_id
+                LEFT JOIN VEHICLE_TAGS vt ON vtm.tag_id = vt.tag_id
+                LEFT JOIN VEHICLE_FEATURE_MAPPING vfm ON v.vehicle_id = vfm.vehicle_id
+                LEFT JOIN VEHICLE_FEATURES vf ON vfm.feature_id = vf.feature_id
+                WHERE av.auction_id = $1
+                GROUP BY
+                    av.auction_id, av.vehicle_id, vm.name, vmo.name,
+                    v.year, v.vin, v.price, v.mileage, v.exterior_color,
+                    v.interior_color, v.transmission, v.fuel_type,
+                    v.body_type, v.engine, v.condition, v.status,
+                    v.description, v.stock_number, v.location,
+                    v.carfax_link, av.purchase_date, av.purchase_price,
+                    av.additional_costs, av.list_price, av.sold_price,
+                    av.status, av.notes, av.created_at, av.updated_at,
+                    vi.image_urls, vi.primary_image_index;
+            `;
+
+            const result = await pool.query(query, [auctionId]);
+
+            if (result.rows.length === 0) {
+                return res.status(404).json({
+                    status: "error",
+                    message: "Auction not found"
+                });
+            }
+
+            const auctionData = result.rows[0];
+            
+            // Calculate total investment and profit
+            const totalInvestment = parseFloat(auctionData.purchase_price) + parseFloat(auctionData.additional_costs || 0);
+            const profit = auctionData.sold_price 
+                ? parseFloat(auctionData.sold_price) - totalInvestment 
+                : null;
+
+            res.status(200).json({
+                status: "success",
+                data: {
+                    ...auctionData,
+                    total_investment: totalInvestment,
+                    profit: profit,
+                    images: auctionData.images || [],
+                    tags: auctionData.tags || [],
+                    features: auctionData.features || []
+                }
+            });
+
+        } catch (error) {
+            console.error('Error in getAuctionById:', error);
             res.status(500).json({
                 status: "error",
-                message: error.message || "Failed to fetch auction dashboard summary."
+                message: "Failed to fetch auction details",
+                details: process.env.NODE_ENV === 'development' ? error.message : undefined
             });
         }
     }

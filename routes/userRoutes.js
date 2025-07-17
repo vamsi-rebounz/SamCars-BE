@@ -5,26 +5,13 @@ const { authenticateToken, isAdmin } = require('../middleware/authMiddleware');
 
 const router = express.Router();
 
-// * Public Routes *
-router.post(
-    '/register', 
-    UserController.registerUser
-);
+// Protected Routes - User Profile Management
+router.get('/profile', authenticateToken, UserController.fetchUserById);
+router.put('/profile', authenticateToken, UserController.updateUserProfile);
 
-// * Protected Route Examples *
-router.get('/fetch-by-id', authenticateToken, UserController.fetchUserById);
-
-router.put('/update-profile', authenticateToken, UserController.updateUserProfile);
-
-router.post(
-    '/login', 
-    UserController.loginUser
-);
-
-// * Protected Routes *
-router.get(
-    '/fetch-by-id', 
-    // authenticateToken, 
-    UserController.fetchUserById);
+// Admin Routes
+router.get('/list', authenticateToken, isAdmin, UserController.listUsers);
+router.get('/:userId', authenticateToken, isAdmin, UserController.fetchUserById);
+router.put('/:userId/status', authenticateToken, isAdmin, UserController.updateUserStatus);
 
 module.exports = router;

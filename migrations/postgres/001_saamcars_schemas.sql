@@ -447,3 +447,51 @@ CREATE TABLE DASHBOARD_ALERTS (
 -- Create indexes
 CREATE INDEX idx_dashboard_alerts_priority ON DASHBOARD_ALERTS(priority, is_resolved);
 CREATE INDEX idx_dashboard_alerts_type ON DASHBOARD_ALERTS(type, is_resolved); 
+
+-- Create user_wishlist table
+CREATE TABLE IF NOT EXISTS user_wishlist (
+    wishlist_id SERIAL PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+    vehicle_id INTEGER NOT NULL REFERENCES vehicles(vehicle_id) ON DELETE CASCADE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(user_id, vehicle_id)
+);
+
+-- Create index for faster lookups
+CREATE INDEX IF NOT EXISTS idx_user_wishlist_user_id ON user_wishlist(user_id);
+CREATE INDEX IF NOT EXISTS idx_user_wishlist_vehicle_id ON user_wishlist(vehicle_id); 
+
+-- Add new columns for enhanced authentication
+ALTER TABLE users
+    ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT true,
+    ADD COLUMN IF NOT EXISTS token_version INTEGER DEFAULT 0,
+    ADD COLUMN IF NOT EXISTS last_login TIMESTAMP WITH TIME ZONE;
+
+-- Rename password_hash column to password for consistency
+ALTER TABLE users 
+    RENAME COLUMN password_hash TO password;
+
+-- Add indexes for commonly queried fields
+CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
+CREATE INDEX IF NOT EXISTS idx_users_role ON users(role);
+CREATE INDEX IF NOT EXISTS idx_users_is_active ON users(is_active);
+
+-- Add constraints
+ALTER TABLE users
+    ALTER COLUMN email SET NOT NULL,
+    ALTER COLUMN password SET NOT NULL,
+    ALTER COLUMN role SET NOT NULL,
+    ALTER COLUMN is_active SET NOT NULL,
+    ALTER COLUMN token_version SET NOT NULL;
+
+-- Add unique constraint on email if not exists
+DO $$ 
+BEGIN 
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint 
+        WHERE conname = 'users_email_unique'
+    ) THEN
+        ALTER TABLE users
+            ADD CONSTRAINT users_email_unique UNIQUE (email);
+    END IF;
+END $$; 

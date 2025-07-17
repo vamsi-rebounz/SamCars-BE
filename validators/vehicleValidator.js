@@ -11,7 +11,7 @@ const {
  * @param {object} data - The vehicle data to validate
  * @returns {string|null} Error message if validation fails, null if validation passes
  */
-function validateVehicleData(data) {
+function validateVehicleData(data, isPartialUpdate = false) {
     const {
         make,
         model,
@@ -26,30 +26,45 @@ function validateVehicleData(data) {
         carfax_link,
         features,
         fuel_type,
+        stock_number
     } = data;
 
-    // Required fields
-    if (!make) return 'Make is required';
-    if (!model) return 'Model is required';
-    if (!year) return 'Year is required';
-    // if (!price) return 'Price is required';
-    if (!transmission) return 'Transmission is required';
-    if (!body_type) return 'Body type is required';
-    if (!condition) return 'Condition is required';
-    if (!fuel_type) return 'Fuel type is required';
-
-    // Type validations
-    if (typeof make !== 'string') return 'Make must be a string';
-    if (typeof model !== 'string') return 'Model must be a string';
-    if (typeof year !== 'number') return 'Year must be a number';
-    if (typeof price !== 'number') return 'Price must be a number';
-    
-    // Value validations
-    const currentYear = new Date().getFullYear();
-    if (year > currentYear + 1) {
-        return `Year must be less than current year i.e, ${currentYear + 1}`;
+    // Required fields - only check if not a partial update or if the field is provided
+    if (!isPartialUpdate) {
+        if (!make) return 'Make is required';
+        if (!model) return 'Model is required';
+        if (!year) return 'Year is required';
+        if (!transmission) return 'Transmission is required';
+        if (!body_type) return 'Body type is required';
+        if (!condition) return 'Condition is required';
+        if (!fuel_type) return 'Fuel type is required';
+        if (!stock_number) return 'Stock number is required';
+        if (!status) return 'Status is required';
     }
-    if (price <= 0) return 'Price must be greater than 0';
+
+    // Type validations - only validate if the field is provided
+    if (make !== undefined && typeof make !== 'string') return 'Make must be a string';
+    if (model !== undefined && typeof model !== 'string') return 'Model must be a string';
+    if (year !== undefined && typeof year !== 'number') return 'Year must be a number';
+    if (price !== undefined && typeof price !== 'number') return 'Price must be a number';
+    if (stock_number !== undefined && typeof stock_number !== 'string') return 'Stock number must be a string';
+    if (status !== undefined && typeof status !== 'string') return 'Status must be a string';
+    
+    // Stock number format validation - only if provided
+    if (stock_number !== undefined) {
+        if (stock_number.trim().length === 0) return 'Stock number cannot be empty';
+        if (stock_number.length > 50) return 'Stock number cannot be longer than 50 characters';
+        if (!/^[A-Za-z0-9-]+$/.test(stock_number)) return 'Stock number can only contain letters, numbers, and hyphens';
+    }
+    
+    // Value validations - only if provided
+    if (year !== undefined) {
+        const currentYear = new Date().getFullYear();
+        if (year > currentYear + 1) {
+            return `Year must be less than current year i.e, ${currentYear + 1}`;
+        }
+    }
+    if (price !== undefined && price <= 0) return 'Price must be greater than 0';
     
     // Optional field validations
     if (mileage !== null && mileage !== undefined) {
@@ -57,8 +72,8 @@ function validateVehicleData(data) {
         if (mileage < 0) return 'Mileage cannot be negative';
     }
 
-    // VIN validation
-    if (vin) {
+    // VIN validation - only if provided
+    if (vin !== undefined) {
         if (typeof vin !== 'string') return 'VIN must be a string';
         if (vin.length !== 17) return 'VIN must be 17 characters long';
         if (!/^[A-HJ-NPR-Z0-9]{17}$/.test(vin)) {
@@ -66,43 +81,53 @@ function validateVehicleData(data) {
         }
     }
 
-    // Validate status and condition against enum types
-    const validTransmissions = Object.values(TRANSMISSION_TYPES);
-    if (!validTransmissions.includes(transmission)) {
-        return 'Invalid transmission type';
+    // Validate status and condition against enum types - only if provided
+    if (transmission !== undefined) {
+        const validTransmissions = Object.values(TRANSMISSION_TYPES);
+        if (!validTransmissions.includes(transmission)) {
+            return 'Invalid transmission type';
+        }
     }
 
-    // Validate body type against enum types
-    const validBodyTypes = Object.values(BODY_TYPES);
-    if (!validBodyTypes.includes(body_type)) {
-        return 'Invalid body type';
+    // Validate body type against enum types - only if provided
+    if (body_type !== undefined) {
+        const validBodyTypes = Object.values(BODY_TYPES);
+        if (!validBodyTypes.includes(body_type)) {
+            return 'Invalid body type';
+        }
     }
 
-    // Validate vehicle conditions against enum types
-    const validConditions = Object.values(VEHICLE_CONDITIONS);
-    if (!validConditions.includes(condition)) {
-        throw new Error('Invalid vehicle condition');
+    // Validate vehicle conditions against enum types - only if provided
+    if (condition !== undefined) {
+        const validConditions = Object.values(VEHICLE_CONDITIONS);
+        if (!validConditions.includes(condition)) {
+            return 'Invalid vehicle condition';
+        }
     }
 
-    // Valid vehicle statuses against enum types
-    const validStatuses = Object.values(VEHICLE_STATUSES);
-    if (!validStatuses.includes(status)) {
-        throw new Error('Invalid vehicle status');
+    // Valid vehicle statuses against enum types - only if provided
+    if (status !== undefined) {
+        const validStatuses = Object.values(VEHICLE_STATUSES);
+        if (!validStatuses.includes(status)) {
+            return 'Invalid vehicle status';
+        }
     }
 
-    // Validate fuel type
-    const validFuelTypes = Object.values(FUEL_TYPES);
-    if (!validFuelTypes.includes(fuel_type)) {
-        throw new Error('Invalid fuel type');
+    // Validate fuel type - only if provided
+    if (fuel_type !== undefined) {
+        const validFuelTypes = Object.values(FUEL_TYPES);
+        if (!validFuelTypes.includes(fuel_type)) {
+            return 'Invalid fuel type';
+        }
     }
 
     // Validate Carfax link if provided
-    if (carfax_link && !isSafeURL(carfax_link)) {
+    if (carfax_link !== undefined && !isSafeURL(carfax_link)) {
         throw new Error('Invalid Carfax link URL');
     }
 
     // Validate features if provided
-    if(features) {
+    if(features !== undefined) {
         if (!Array.isArray(features)) {
             return 'Features must be an array';
         }

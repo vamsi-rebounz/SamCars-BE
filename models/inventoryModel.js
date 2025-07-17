@@ -199,12 +199,26 @@ class InventoryModel {
      * @param {number} vehicle_id - The ID of the vehicle to update.
      * @param {object} vehicleData - Updated data for the vehicle.
      * @param {Array<object>} files - Array of new image files to upload.
+     * @param {object} client - Database client for transaction management.
      * @param {Array<string>} imagesToDelete - Array of image URLs to delete.
+     * @param {Array<string>} existingImages - Array of image URLs to keep.
      * @returns {Promise<void>}
      */
-    static async updateVehicle(vehicle_id, vehicleData, files, imagesToDelete = []) {
-        console.log('InventoryModel.updateVehicle called with:', { vehicle_id, vehicleData, filesCount: files?.length, imagesToDelete });
-        const client = await pool.connect();
+    static async updateVehicle(vehicle_id, vehicleData, files = [], client = pool, imagesToDelete = [], existingImages = []) {
+        console.log('InventoryModel.updateVehicle called with:', { 
+            vehicle_id, 
+            vehicleData, 
+            filesCount: files?.length, 
+            hasClient: !!client,
+            imagesToDeleteCount: imagesToDelete?.length,
+            existingImagesCount: existingImages?.length
+        });
+        
+        const shouldReleaseClient = !client;
+        if (shouldReleaseClient) {
+            client = await pool.connect();
+        }
+        
         try {
             await client.query('BEGIN');
             console.log('Database transaction started');
@@ -336,7 +350,7 @@ class InventoryModel {
             addUpdateField('vin', vin);
             addUpdateField('condition', condition);
             addUpdateField('is_featured', is_featured);
-            addUpdateField('status', status);
+            // Remove status from here as we'll handle it separately
             addUpdateField('description', description);
             addUpdateField('carfax_link', carfax_link);
             addUpdateField('location', location);
@@ -353,6 +367,11 @@ class InventoryModel {
                 `;
                 updateValues.push(vehicle_id);
                 await client.query(updateQuery, updateValues);
+            }
+
+            // Update status in both tables if status is provided
+            if (status !== undefined) {
+                await InventoryModel.updateVehicleStatus(vehicle_id, status, client);
             }
 
             // 4. Handle features update if provided
@@ -529,7 +548,54 @@ class InventoryModel {
             await client.query('ROLLBACK');
             throw error;
         } finally {
-            client.release();
+            if (shouldReleaseClient && client) {
+                client.release();
+            }
+        }
+    }
+
+    /**
+     * Updates vehicle status in both vehicles and auction_vehicles tables.
+     * @param {number} vehicleId - The ID of the vehicle to update.
+     * @param {string} status - The new status.
+     * @param {object} client - Database client for transaction.
+     */
+    static async updateVehicleStatus(vehicleId, status, client = pool) {
+        const shouldReleaseClient = !client;
+        if (shouldReleaseClient) {
+            client = await pool.connect();
+            await client.query('BEGIN');
+        }
+
+        try {
+            // Update vehicles table
+            const vehicleQuery = `
+                UPDATE VEHICLES
+                SET status = $1, updated_at = CURRENT_TIMESTAMP
+                WHERE vehicle_id = $2;
+            `;
+            await client.query(vehicleQuery, [status, vehicleId]);
+
+            // Update auction_vehicles table if the vehicle exists there
+            const auctionQuery = `
+                UPDATE AUCTION_VEHICLES
+                SET status = $1, updated_at = CURRENT_TIMESTAMP
+                WHERE vehicle_id = $2;
+            `;
+            await client.query(auctionQuery, [status, vehicleId]);
+
+            if (shouldReleaseClient) {
+                await client.query('COMMIT');
+            }
+        } catch (error) {
+            if (shouldReleaseClient) {
+                await client.query('ROLLBACK');
+            }
+            throw error;
+        } finally {
+            if (shouldReleaseClient) {
+                client.release();
+            }
         }
     }
 

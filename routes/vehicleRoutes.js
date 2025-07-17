@@ -4,7 +4,7 @@ const VehicleController = require('../controllers/vehicleController');
 const { authenticateToken, authorizeRoles } = require('../middleware/authMiddleware');
 
 // Get vehicle by ID
-router.get('/fetch-by-id', 
+router.get('/:id', 
     //authenticateToken,
     VehicleController.getVehicleById
 );

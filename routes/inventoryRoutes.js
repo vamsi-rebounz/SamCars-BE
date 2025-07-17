@@ -28,7 +28,7 @@ router.put(
 
 // Fetch vehicles with filters
 router.get(
-    '/fetch-vehicles',
+    '/',
     // authenticateToken,
     // isAdmin,
     InventoryController.getInventory

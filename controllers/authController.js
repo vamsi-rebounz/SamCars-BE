@@ -1,10 +1,249 @@
 const crypto = require('crypto');
 const bcrypt = require('bcrypt');
+const jwt = require('jsonwebtoken');
 const transporter = require('../config/mail');
 const userModel = require('../models/userModel');
 const passwordResetModel = require('../models/passwordResetModel');
 require('dotenv').config();
 
+// Password validation
+const validatePassword = (password) => {
+    const minLength = 8;
+    const hasUpperCase = /[A-Z]/.test(password);
+    const hasLowerCase = /[a-z]/.test(password);
+    const hasNumbers = /\d/.test(password);
+    const hasSpecialChar = /[!@#$%^&*(),.?":{}|<>]/.test(password);
+
+    const errors = [];
+    if (password.length < minLength) errors.push(`Password must be at least ${minLength} characters long`);
+    if (!hasUpperCase) errors.push('Password must contain at least one uppercase letter');
+    if (!hasLowerCase) errors.push('Password must contain at least one lowercase letter');
+    if (!hasNumbers) errors.push('Password must contain at least one number');
+    if (!hasSpecialChar) errors.push('Password must contain at least one special character');
+
+    return errors;
+};
+
+// Generate tokens
+const generateTokens = (user) => {
+    const accessToken = jwt.sign(
+        { 
+            userId: user.user_id,
+            email: user.email,
+            role: user.role,
+            tokenVersion: user.token_version
+        },
+        process.env.JWT_SECRET,
+        { expiresIn: '15m' }
+    );
+
+    const refreshToken = jwt.sign(
+        { 
+            userId: user.user_id,
+            tokenVersion: user.token_version
+        },
+        process.env.JWT_REFRESH_SECRET,
+        { expiresIn: '7d' }
+    );
+
+    return { accessToken, refreshToken };
+};
+
+// Registration
+exports.register = async (req, res) => {
+    try {
+        const { email, password, firstName, lastName, phone } = req.body;
+
+        // Validate email
+        if (!email || !email.match(/^[^\s@]+@[^\s@]+\.[^\s@]+$/)) {
+            return res.status(400).json({
+                status: 'error',
+                message: 'Invalid email format'
+            });
+        }
+
+        // Check if user exists
+        const existingUser = await userModel.findByEmail(email);
+        if (existingUser) {
+            return res.status(400).json({
+                status: 'error',
+                message: 'Email already registered'
+            });
+        }
+
+        // Validate password
+        const passwordErrors = validatePassword(password);
+        if (passwordErrors.length > 0) {
+            return res.status(400).json({
+                status: 'error',
+                message: 'Password validation failed',
+                errors: passwordErrors
+            });
+        }
+
+        // Hash password
+        const hashedPassword = await bcrypt.hash(password, 12);
+
+        // Create user
+        const user = await userModel.create({
+            email,
+            password: hashedPassword,
+            first_name: firstName,
+            last_name: lastName,
+            phone,
+            role: 'customer',
+            is_active: true,
+            token_version: 0
+        });
+
+        // Generate tokens
+        const { accessToken, refreshToken } = generateTokens(user);
+
+        res.status(201).json({
+            status: 'success',
+            data: {
+                user: {
+                    userId: user.user_id,
+                    email: user.email,
+                    firstName: user.first_name,
+                    lastName: user.last_name,
+                    role: user.role
+                },
+                accessToken,
+                refreshToken
+            }
+        });
+    } catch (error) {
+        console.error('Registration error:', error);
+        res.status(500).json({
+            status: 'error',
+            message: 'Failed to register user'
+        });
+    }
+};
+
+// Login
+exports.login = async (req, res) => {
+    try {
+        const { email, password } = req.body;
+
+        // Find user
+        const user = await userModel.findByEmail(email);
+        if (!user) {
+            return res.status(401).json({
+                status: 'error',
+                message: 'Invalid credentials'
+            });
+        }
+
+        // Check if account is active
+        if (!user.is_active) {
+            return res.status(401).json({
+                status: 'error',
+                message: 'Account is deactivated'
+            });
+        }
+
+        // Verify password
+        const isValidPassword = await bcrypt.compare(password, user.password);
+        if (!isValidPassword) {
+            return res.status(401).json({
+                status: 'error',
+                message: 'Invalid credentials'
+            });
+        }
+
+        // Generate tokens
+        const { accessToken, refreshToken } = generateTokens(user);
+
+        res.json({
+            status: 'success',
+            data: {
+                user: {
+                    userId: user.user_id,
+                    email: user.email,
+                    firstName: user.first_name,
+                    lastName: user.last_name,
+                    role: user.role
+                },
+                accessToken,
+                refreshToken
+            }
+        });
+    } catch (error) {
+        console.error('Login error:', error);
+        res.status(500).json({
+            status: 'error',
+            message: 'Failed to login'
+        });
+    }
+};
+
+// Refresh Token
+exports.refreshToken = async (req, res) => {
+    try {
+        const { refreshToken } = req.body;
+        if (!refreshToken) {
+            return res.status(400).json({
+                status: 'error',
+                message: 'Refresh token required'
+            });
+        }
+
+        // Verify refresh token
+        const decoded = jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET);
+        
+        // Get user
+        const user = await userModel.findById(decoded.userId);
+        if (!user || !user.is_active || user.token_version !== decoded.tokenVersion) {
+            return res.status(401).json({
+                status: 'error',
+                message: 'Invalid refresh token'
+            });
+        }
+
+        // Generate new tokens
+        const tokens = generateTokens(user);
+
+        res.json({
+            status: 'success',
+            data: tokens
+        });
+    } catch (error) {
+        if (error instanceof jwt.TokenExpiredError) {
+            return res.status(401).json({
+                status: 'error',
+                message: 'Refresh token expired'
+            });
+        }
+        console.error('Token refresh error:', error);
+        res.status(500).json({
+            status: 'error',
+            message: 'Failed to refresh token'
+        });
+    }
+};
+
+// Logout (invalidate refresh token)
+exports.logout = async (req, res) => {
+    try {
+        // Increment token version to invalidate all existing tokens
+        await userModel.incrementTokenVersion(req.user.userId);
+        
+        res.json({
+            status: 'success',
+            message: 'Successfully logged out'
+        });
+    } catch (error) {
+        console.error('Logout error:', error);
+        res.status(500).json({
+            status: 'error',
+            message: 'Failed to logout'
+        });
+    }
+};
+
+// Keep existing password reset functionality
 exports.requestPasswordReset = async (req, res) => {
   const { email } = req.body;
 

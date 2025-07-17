@@ -40,7 +40,7 @@ class AuctionModel {
       purchaseData.purchase_price,
       purchaseData.additional_costs || 0,
       purchaseData.list_price || null,
-      'auction',
+      purchaseData.status || 'reserved', // Use status from purchaseData if provided, fallback to 'reserved'
       purchaseData.notes || null
     ];
 
@@ -55,12 +55,21 @@ class AuctionModel {
      * @param {object} client - PostgreSQL client for transaction.
      */
     static async updateVehicleStatus(vehicleId, status, client) {
-        const query = `
+        // Update vehicles table
+        const vehicleQuery = `
             UPDATE VEHICLES
             SET status = $1, updated_at = CURRENT_TIMESTAMP
             WHERE vehicle_id = $2;
         `;
-        await client.query(query, [status, vehicleId]);
+        await client.query(vehicleQuery, [status, vehicleId]);
+
+        // Update auction_vehicles table
+        const auctionQuery = `
+            UPDATE AUCTION_VEHICLES
+            SET status = $1, updated_at = CURRENT_TIMESTAMP
+            WHERE vehicle_id = $2;
+        `;
+        await client.query(auctionQuery, [status, vehicleId]);
     }
 
     /**
@@ -178,12 +187,12 @@ class AuctionModel {
                 const searchTerm = `%${search.toLowerCase()}%`;
                 whereClause.push(`(
                     LOWER(v.vin) LIKE $${paramIndex} OR
-                    LOWER(vm.name) LIKE $${paramIndex} OR
-                    LOWER(vmo.name) LIKE $${paramIndex}
+                    LOWER(vm.name) LIKE $${paramIndex + 1} OR
+                    LOWER(vmo.name) LIKE $${paramIndex + 2}
                 )`);
-                queryParams.push(searchTerm);
-                countParams.push(searchTerm);
-                paramIndex++;
+                queryParams.push(searchTerm, searchTerm, searchTerm);
+                countParams.push(searchTerm, searchTerm, searchTerm);
+                paramIndex += 3;
             }
     
             let query = `
@@ -368,6 +377,189 @@ class AuctionModel {
             } finally {
                 client.release(); // Always release the client back to the pool
             }
+    }
+
+    /**
+     * Fetches detailed auction information by ID including all vehicle details
+     * @param {number} auctionId - The ID of the auction to fetch
+     * @returns {Promise<Object|null>} Auction details with vehicle information or null if not found
+     */
+    static async getAuctionDetailsById(auctionId) {
+        const query = `
+            SELECT
+                av.auction_id AS "auctionId",
+                av.vehicle_id AS "vehicleId",
+                vm.name AS make,
+                vmo.name AS model,
+                v.year,
+                v.vin,
+                v.price,
+                v.mileage,
+                v.exterior_color AS "exteriorColor",
+                v.interior_color AS "interiorColor",
+                v.transmission,
+                v.fuel_type AS "fuelType",
+                v.body_type AS "bodyType",
+                v.engine,
+                v.condition,
+                v.status AS "vehicleStatus",
+                v.description,
+                v.stock_number AS "stockNumber",
+                v.location,
+                v.carfax_link AS "carfaxLink",
+                av.purchase_date AS "purchaseDate",
+                av.purchase_price AS "purchasePrice",
+                av.additional_costs AS "additionalCosts",
+                av.total_investment AS "totalInvestment",
+                av.list_price AS "listPrice",
+                av.sold_price AS "soldPrice",
+                av.status,
+                av.profit,
+                av.notes,
+                av.created_at AS "createdAt",
+                av.updated_at AS "updatedAt",
+                vi.image_urls AS "imageUrls",
+                vi.primary_image_index AS "primaryImageIndex",
+                ARRAY_REMOVE(ARRAY_AGG(DISTINCT vt.name), NULL) AS tags,
+                ARRAY_REMOVE(ARRAY_AGG(DISTINCT vf.name), NULL) AS features
+            FROM
+                AUCTION_VEHICLES av
+                JOIN VEHICLES v ON av.vehicle_id = v.vehicle_id
+                JOIN VEHICLE_MAKES vm ON v.make_id = vm.make_id
+                JOIN VEHICLE_MODELS vmo ON v.model_id = vmo.model_id
+                LEFT JOIN VEHICLE_IMAGES vi ON v.vehicle_id = vi.vehicle_id
+                LEFT JOIN VEHICLE_TAG_MAPPING vtm ON v.vehicle_id = vtm.vehicle_id
+                LEFT JOIN VEHICLE_TAGS vt ON vtm.tag_id = vt.tag_id
+                LEFT JOIN VEHICLE_FEATURE_MAPPING vfm ON v.vehicle_id = vfm.vehicle_id
+                LEFT JOIN VEHICLE_FEATURES vf ON vfm.feature_id = vf.feature_id
+            WHERE
+                av.auction_id = $1
+            GROUP BY
+                av.auction_id,
+                av.vehicle_id,
+                vm.name,
+                vmo.name,
+                v.year,
+                v.vin,
+                v.price,
+                v.mileage,
+                v.exterior_color,
+                v.interior_color,
+                v.transmission,
+                v.fuel_type,
+                v.body_type,
+                v.engine,
+                v.condition,
+                v.status,
+                v.description,
+                v.stock_number,
+                v.location,
+                v.carfax_link,
+                av.purchase_date,
+                av.purchase_price,
+                av.additional_costs,
+                av.total_investment,
+                av.list_price,
+                av.sold_price,
+                av.status,
+                av.profit,
+                av.notes,
+                av.created_at,
+                av.updated_at,
+                vi.image_urls,
+                vi.primary_image_index;
+        `;
+
+        const result = await pool.query(query, [auctionId]);
+        return result.rows[0] || null;
+    }
+
+    /**
+     * Fetches comprehensive dashboard statistics including age analysis
+     * @param {object} options - Options for filtering the summary
+     * @param {string} options.date_from - Start date for filtering (YYYY-MM-DD)
+     * @param {string} options.date_to - End date for filtering (YYYY-MM-DD)
+     * @param {string} [options.status] - Optional status filter
+     * @returns {Promise<Object>} Dashboard statistics
+     */
+    static async getDashboardStatistics({ date_from: dateFrom, date_to: dateTo, status }) {
+        const client = await pool.connect();
+        try {
+            // Get basic summary statistics
+            const summaryStats = await this.getAuctionSummaryStatistics({ date_from: dateFrom, date_to: dateTo, status });
+
+            // Calculate age analysis (days since purchase) for current inventory
+            const ageAnalysisQuery = `
+                WITH age_calc AS (
+                    SELECT
+                        CASE
+                            WHEN DATE_PART('day', NOW() - purchase_date) <= 30 THEN '0-30 days'
+                            WHEN DATE_PART('day', NOW() - purchase_date) <= 60 THEN '31-60 days'
+                            WHEN DATE_PART('day', NOW() - purchase_date) <= 90 THEN '61-90 days'
+                            ELSE 'Over 90 days'
+                        END AS age_range,
+                        COUNT(*) as count,
+                        COALESCE(SUM(total_investment), 0) as total_investment
+                    FROM auction_vehicles
+                    WHERE status != 'sold'
+                    AND purchase_date BETWEEN $1 AND $2
+                    GROUP BY age_range
+                )
+                SELECT
+                    age_range,
+                    count::integer,
+                    total_investment::numeric
+                FROM age_calc
+                ORDER BY
+                    CASE age_range
+                        WHEN '0-30 days' THEN 1
+                        WHEN '31-60 days' THEN 2
+                        WHEN '61-90 days' THEN 3
+                        ELSE 4
+                    END;
+            `;
+
+            const ageAnalysisResult = await client.query(ageAnalysisQuery, [dateFrom, dateTo]);
+
+            // Calculate average days to sell
+            const avgDaysToSellQuery = `
+                SELECT
+                    COALESCE(
+                        AVG(
+                            DATE_PART('day', updated_at - purchase_date)
+                        )::numeric,
+                        0
+                    ) as avg_days_to_sell
+                FROM auction_vehicles
+                WHERE status = 'sold'
+                AND purchase_date BETWEEN $1 AND $2
+                AND updated_at >= purchase_date;
+            `;
+
+            const avgDaysResult = await client.query(avgDaysToSellQuery, [dateFrom, dateTo]);
+
+            // Format the response
+            return {
+                summary: {
+                    total_investment: summaryStats.totalInvestment,
+                    total_profit: summaryStats.totalProfit,
+                    vehicles_purchased: summaryStats.vehiclesPurchased,
+                    vehicles_sold: summaryStats.vehiclesSold,
+                    avg_days_to_sell: parseFloat(avgDaysResult.rows[0].avg_days_to_sell).toFixed(1)
+                },
+                age_analysis: ageAnalysisResult.rows.map(row => ({
+                    age_range: row.age_range,
+                    count: parseInt(row.count),
+                    total_investment: parseFloat(row.total_investment).toFixed(2)
+                }))
+            };
+
+        } catch (error) {
+            console.error('Error fetching dashboard statistics:', error);
+            throw error;
+        } finally {
+            client.release();
+        }
     }
 }
 

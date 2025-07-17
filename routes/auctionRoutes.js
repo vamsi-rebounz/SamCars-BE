@@ -51,4 +51,20 @@ router.get(
     AuctionController.getAuctionDashboardSummary
 );
 
+// Dashboard overview
+router.get(
+    '/dashboard',
+    // authenticateToken,
+    // isAdmin,
+    AuctionController.getAuctionDashboardSummary
+);
+
+// Fetch auction details - This must be last to avoid catching other routes
+router.get(
+    '/:id',
+    // authenticateToken,
+    // isAdmin,
+    AuctionController.getAuctionById
+);
+
 module.exports = router;
