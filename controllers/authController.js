@@ -15,11 +15,11 @@ const validatePassword = (password) => {
     const hasSpecialChar = /[!@#$%^&*(),.?":{}|<>]/.test(password);
 
     const errors = [];
-    if (password.length < minLength) errors.push(`Password must be at least ${minLength} characters long`);
-    if (!hasUpperCase) errors.push('Password must contain at least one uppercase letter');
-    if (!hasLowerCase) errors.push('Password must contain at least one lowercase letter');
-    if (!hasNumbers) errors.push('Password must contain at least one number');
-    if (!hasSpecialChar) errors.push('Password must contain at least one special character');
+    if (password.length < minLength) errors.push(`Your password must be at least ${minLength} characters long`);
+    if (!hasUpperCase) errors.push('Your password must include at least one uppercase letter');
+    if (!hasLowerCase) errors.push('Your password must include at least one lowercase letter');
+    if (!hasNumbers) errors.push('Your password must include at least one number');
+    if (!hasSpecialChar) errors.push('Your password must include at least one special character');
 
     return errors;
 };
@@ -52,13 +52,14 @@ const generateTokens = (user) => {
 // Registration
 exports.register = async (req, res) => {
     try {
-        const { email, password, firstName, lastName, phone } = req.body;
+        console.log('Registration request body:', req.body);
+        const { email, password, firstName, lastName, phone, role } = req.body;
 
         // Validate email
         if (!email || !email.match(/^[^\s@]+@[^\s@]+\.[^\s@]+$/)) {
             return res.status(400).json({
                 status: 'error',
-                message: 'Invalid email format'
+                message: 'Please enter a valid email address'
             });
         }
 
@@ -67,7 +68,7 @@ exports.register = async (req, res) => {
         if (existingUser) {
             return res.status(400).json({
                 status: 'error',
-                message: 'Email already registered'
+                message: 'This email address is already registered. Please use a different email or try logging in.'
             });
         }
 
@@ -76,8 +77,17 @@ exports.register = async (req, res) => {
         if (passwordErrors.length > 0) {
             return res.status(400).json({
                 status: 'error',
-                message: 'Password validation failed',
+                message: 'Please ensure your password meets our security requirements:',
                 errors: passwordErrors
+            });
+        }
+
+        // Validate role
+        const validRoles = ['customer', 'admin', 'sales', 'technician', 'manager'];
+        if (role && !validRoles.includes(role)) {
+            return res.status(400).json({
+                status: 'error',
+                message: 'Invalid user role specified. Please contact support if this issue persists.'
             });
         }
 
@@ -85,22 +95,25 @@ exports.register = async (req, res) => {
         const hashedPassword = await bcrypt.hash(password, 12);
 
         // Create user
-        const user = await userModel.create({
+        const userData = {
             email,
             password: hashedPassword,
             first_name: firstName,
             last_name: lastName,
             phone,
-            role: 'customer',
+            role: role || 'customer',
             is_active: true,
             token_version: 0
-        });
+        };
+        console.log('Creating user with data:', userData);
+        const user = await userModel.create(userData);
 
         // Generate tokens
         const { accessToken, refreshToken } = generateTokens(user);
 
         res.status(201).json({
             status: 'success',
+            message: 'Your account has been created successfully. Welcome to SaamCars!',
             data: {
                 user: {
                     userId: user.user_id,
@@ -117,7 +130,8 @@ exports.register = async (req, res) => {
         console.error('Registration error:', error);
         res.status(500).json({
             status: 'error',
-            message: 'Failed to register user'
+            message: 'We encountered an issue while creating your account. Please try again later.',
+            details: error.message
         });
     }
 };
@@ -132,7 +146,7 @@ exports.login = async (req, res) => {
         if (!user) {
             return res.status(401).json({
                 status: 'error',
-                message: 'Invalid credentials'
+                message: 'The email or password you entered is incorrect. Please try again.'
             });
         }
 
@@ -140,7 +154,7 @@ exports.login = async (req, res) => {
         if (!user.is_active) {
             return res.status(401).json({
                 status: 'error',
-                message: 'Account is deactivated'
+                message: 'Your account is currently deactivated. Please contact support for assistance.'
             });
         }
 
@@ -149,7 +163,7 @@ exports.login = async (req, res) => {
         if (!isValidPassword) {
             return res.status(401).json({
                 status: 'error',
-                message: 'Invalid credentials'
+                message: 'The email or password you entered is incorrect. Please try again.'
             });
         }
 
@@ -158,6 +172,7 @@ exports.login = async (req, res) => {
 
         res.json({
             status: 'success',
+            message: 'Welcome back to SaamCars!',
             data: {
                 user: {
                     userId: user.user_id,
@@ -174,7 +189,7 @@ exports.login = async (req, res) => {
         console.error('Login error:', error);
         res.status(500).json({
             status: 'error',
-            message: 'Failed to login'
+            message: 'We encountered an issue while signing you in. Please try again later.'
         });
     }
 };
@@ -186,7 +201,7 @@ exports.refreshToken = async (req, res) => {
         if (!refreshToken) {
             return res.status(400).json({
                 status: 'error',
-                message: 'Refresh token required'
+                message: 'Your session has expired. Please sign in again.'
             });
         }
 
@@ -198,7 +213,7 @@ exports.refreshToken = async (req, res) => {
         if (!user || !user.is_active || user.token_version !== decoded.tokenVersion) {
             return res.status(401).json({
                 status: 'error',
-                message: 'Invalid refresh token'
+                message: 'Your session has expired. Please sign in again to continue.'
             });
         }
 
@@ -207,24 +222,25 @@ exports.refreshToken = async (req, res) => {
 
         res.json({
             status: 'success',
+            message: 'Session refreshed successfully.',
             data: tokens
         });
     } catch (error) {
         if (error instanceof jwt.TokenExpiredError) {
             return res.status(401).json({
                 status: 'error',
-                message: 'Refresh token expired'
+                message: 'Your session has expired. Please sign in again to continue.'
             });
         }
         console.error('Token refresh error:', error);
         res.status(500).json({
             status: 'error',
-            message: 'Failed to refresh token'
+            message: 'We encountered an issue refreshing your session. Please sign in again.'
         });
     }
 };
 
-// Logout (invalidate refresh token)
+// Logout
 exports.logout = async (req, res) => {
     try {
         // Increment token version to invalidate all existing tokens
@@ -232,92 +248,192 @@ exports.logout = async (req, res) => {
         
         res.json({
             status: 'success',
-            message: 'Successfully logged out'
+            message: 'You have been successfully signed out. Thank you for using SaamCars!'
         });
     } catch (error) {
         console.error('Logout error:', error);
         res.status(500).json({
             status: 'error',
-            message: 'Failed to logout'
+            message: 'We encountered an issue while signing you out. Please try again.'
         });
     }
 };
 
-// Keep existing password reset functionality
+// Request Password Reset
 exports.requestPasswordReset = async (req, res) => {
-  const { email } = req.body;
+    const { email } = req.body;
 
-  try {
-    const user = await userModel.findByEmail(email);
-    if (!user) return res.status(404).json({ message: 'User not found' });
+    try {
+        // Find user
+        const user = await userModel.findByEmail(email);
+        
+        // For security, don't reveal if email exists
+        if (!user) {
+            return res.json({
+                status: 'success',
+                message: 'If an account exists with this email, you will receive password reset instructions shortly.'
+            });
+        }
 
-    const token = crypto.randomBytes(32).toString('hex');
-    const expiresAt = new Date(Date.now() + 15 * 60 * 1000); // 15 mins
+        // Generate reset token
+        const token = crypto.randomBytes(32).toString('hex');
+        const expiresAt = new Date();
+        expiresAt.setHours(expiresAt.getHours() + 1); // Token expires in 1 hour
 
-    await passwordResetModel.createToken(user.user_id, token, expiresAt);
+        // Save reset token
+        await passwordResetModel.createToken(user.user_id, token, expiresAt);
 
-    const resetLink = `${process.env.FRONTEND_RESET_PASSWORD_URL}/reset-password?token=${token}`;
+        // Send reset email
+        const resetLink = `${process.env.FRONTEND_URL}/reset-password?token=${token}`;
+        await transporter.sendMail({
+            to: email,
+            subject: 'Reset Your SaamCars Password',
+            html: `
+                <!DOCTYPE html>
+                <html>
+                <head>
+                    <meta charset="UTF-8">
+                    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                    <title>Reset Your SaamCars Password</title>
+                    <style>
+                        body {
+                            font-family: Arial, sans-serif;
+                            line-height: 1.6;
+                            color: #333333;
+                            margin: 0;
+                            padding: 0;
+                        }
+                        .container {
+                            max-width: 600px;
+                            margin: 0 auto;
+                            padding: 20px;
+                        }
+                        .header {
+                            background-color: #1a56db;
+                            color: white;
+                            padding: 20px;
+                            text-align: center;
+                        }
+                        .content {
+                            background-color: #ffffff;
+                            padding: 30px;
+                            border-radius: 5px;
+                            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+                        }
+                        .button {
+                            display: inline-block;
+                            background-color: #1a56db;
+                            color: white;
+                            padding: 12px 24px;
+                            text-decoration: none;
+                            border-radius: 5px;
+                            margin: 20px 0;
+                        }
+                        .footer {
+                            text-align: center;
+                            margin-top: 20px;
+                            padding: 20px;
+                            font-size: 12px;
+                            color: #666666;
+                        }
+                        .divider {
+                            border-top: 1px solid #e5e7eb;
+                            margin: 20px 0;
+                        }
+                    </style>
+                </head>
+                <body>
+                    <div class="container">
+                        <div class="header">
+                            <h1>SaamCars Password Reset</h1>
+                        </div>
+                        <div class="content">
+                            <h2>Hello ${user.first_name},</h2>
+                            <p>We received a request to reset the password for your SaamCars account. Your security is important to us, and we're here to help you regain access to your account.</p>
+                            
+                            <p><strong>Please click the button below to reset your password:</strong></p>
+                            <p style="text-align: center;">
+                                <a href="${resetLink}" class="button" style="display: inline-block; background-color: #1a56db; color: #ffffff; padding: 12px 24px; text-decoration: none; border-radius: 5px; margin: 20px 0; font-family: Arial, sans-serif; font-size: 16px; font-weight: bold; text-align: center;">Reset My Password</a>
+                            </p>
+                            
+                            <div class="divider"></div>
+                            
+                            <p><strong>Important Security Notes:</strong></p>
+                            <ul>
+                                <li>This link will expire in 1 hour for your security</li>
+                                <li>If you didn't request this password reset, please ignore this email</li>
+                                <li>For additional security, consider changing your password regularly</li>
+                            </ul>
+                            
+                            <p>If you're having trouble clicking the button, you can copy and paste this link into your browser:</p>
+                            <p style="word-break: break-all; font-size: 12px; color: #666666;">${resetLink}</p>
+                        </div>
+                        <div class="footer">
+                            <p>This is an automated message, please do not reply to this email.</p>
+                            <p>&copy; ${new Date().getFullYear()} SaamCars. All rights reserved.</p>
+                            <p>Premium Cars, Exceptional Service</p>
+                        </div>
+                    </div>
+                </body>
+                </html>
+            `
+        });
 
-    await transporter.sendMail({
-      from: `"Saam Cars Support" <${process.env.EMAIL_USER}>` || '"Saam Cars Support" <no-reply@saamcars..com>',
-      to: email,
-      subject: 'Password Reset Request - Saam Cars',
-      headers: {
-        'X-Priority': '1', // 1 = High Priority (used by Gmail)
-        // 'X-MSMail-Priority': 'High', // For microsoft mail clients
-        'Importance': 'high' // Gmail may flag these as important
-      },
-      html: `
-        <div style="font-family: 'Segoe UI', Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-          <div style="background-color: #0078D4; padding: 20px; color: white;">
-            <h1 style="margin: 0;">Saam Cars</h1>
-          </div>
-          <div style="padding: 20px;">
-            <h2 style="color: #0078D4;">Password Reset</h2>
-            <p>Hello User,</p>
-            <p>We received a request to reset your password. Click the button below to proceed:</p>
-            <div style="margin: 25px 0; text-align: center;">
-              <a href="${process.env.FRONTEND_RESET_PASSWORD_URL || 'http://localhost:5173/reset-password'}?token=${token}" 
-                 style="background-color: #0078D4; color: white; padding: 12px 24px; text-decoration: none; border-radius: 4px; font-weight: bold; display: inline-block;">
-                Reset Password
-              </a>
-            </div>
-            <p style="color: #666; font-size: 0.9em;">
-              <strong>Note:</strong> This link will expire in 15 min. If you didn't request this, please ignore this email.
-            </p>
-          </div>
-          <div style="background-color: #f3f2f1; padding: 20px; text-align: center; font-size: 0.8em; color: #666;">
-            <p>© ${new Date().getFullYear()} Saam Cars. All rights reserved.</p>
-          </div>
-        </div>
-      `
-    });
-
-    res.json({ message: 'Reset email sent' });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: 'Server error' });
-  }
+        res.json({
+            status: 'success',
+            message: 'If an account exists with this email, you will receive password reset instructions shortly.'
+        });
+    } catch (error) {
+        console.error('Password reset request error:', error);
+        res.status(500).json({
+            status: 'error',
+            message: 'We encountered an issue processing your request. Please try again later.'
+        });
+    }
 };
 
+// Reset Password
 exports.resetPassword = async (req, res) => {
-  const { token, newPassword } = req.body;
+    const { token, newPassword } = req.body;
 
-  try {
-    const tokenData = await passwordResetModel.findByToken(token);
-    if (!tokenData) return res.status(400).json({ message: 'Invalid or expired token' });
+    try {
+        // Validate password
+        const passwordErrors = validatePassword(newPassword);
+        if (passwordErrors.length > 0) {
+            return res.status(400).json({
+                status: 'error',
+                message: 'Please ensure your new password meets our security requirements:',
+                errors: passwordErrors
+            });
+        }
 
-    if (new Date() > new Date(tokenData.expires_at)) {
-      return res.status(400).json({ message: 'Token expired' });
+        // Find valid reset token
+        const resetToken = await passwordResetModel.findByToken(token);
+        if (!resetToken || new Date() > new Date(resetToken.expires_at)) {
+            return res.status(400).json({
+                status: 'error',
+                message: 'This password reset link has expired or is invalid. Please request a new one.'
+            });
+        }
+
+        // Hash new password
+        const hashedPassword = await bcrypt.hash(newPassword, 12);
+
+        // Update password
+        await userModel.updatePassword(resetToken.user_id, hashedPassword);
+
+        // Invalidate token
+        await passwordResetModel.deleteToken(token);
+
+        res.json({
+            status: 'success',
+            message: 'Your password has been successfully reset. You can now sign in with your new password.'
+        });
+    } catch (error) {
+        console.error('Password reset error:', error);
+        res.status(500).json({
+            status: 'error',
+            message: 'We encountered an issue resetting your password. Please try again later.'
+        });
     }
-
-    const hashed = await bcrypt.hash(newPassword, 10);
-    await userModel.updatePassword(tokenData.user_id, hashed);
-    await passwordResetModel.deleteToken(token);
-
-    res.json({ message: 'Password reset successfully' });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: 'Server error' });
-  }
 };

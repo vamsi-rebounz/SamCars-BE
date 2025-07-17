@@ -7,7 +7,7 @@ const router = express.Router();
 
 // Protected Routes - User Profile Management
 router.get('/profile', authenticateToken, UserController.fetchUserById);
-router.put('/profile', authenticateToken, UserController.updateUserProfile);
+router.put('/profile/update', authenticateToken, UserController.updateUserProfile);
 
 // Admin Routes
 router.get('/list', authenticateToken, isAdmin, UserController.listUsers);
