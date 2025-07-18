@@ -96,16 +96,25 @@ const UserController = {
             });
     
             return res.status(200).json({
-                success: true,
-                message: "Login successful",
-                accessToken,
-                refreshToken,
-                user: {
-                    id: user.user_id,
-                    email: user.email,
-                    role: user.role,
-                    first_name: user.first_name,
-                    last_name: user.last_name
+                status: 'success',
+                message: 'Welcome back to SaamCars!',
+                data: {
+                    user: {
+                        userId: user.user_id,
+                        email: user.email,
+                        firstName: user.first_name,
+                        lastName: user.last_name,
+                        phone: user.phone,
+                        driverLicense: user.driver_license,
+                        dateOfBirth: user.date_of_birth,
+                        role: user.role,
+                        emailVerified: user.email_verified,
+                        lastLogin: user.last_login,
+                        createdAt: user.created_at,
+                        updatedAt: user.updated_at
+                    },
+                    accessToken,
+                    refreshToken
                 }
             });
     
@@ -123,6 +132,7 @@ const UserController = {
     async fetchUserById(req, res) {
         try {
             const userId = req.params.userId || req.user.userId;
+            console.log('Fetching user profile for ID:', userId);
 
             const user = await UserModel.findById(userId);
             if (!user) {
@@ -132,12 +142,28 @@ const UserController = {
                 });
             }
 
-            // Remove sensitive information
+            // Remove sensitive information and transform response
             const { password, ...userInfo } = user;
+            const userResponse = {
+                userId: userInfo.user_id,
+                email: userInfo.email,
+                firstName: userInfo.first_name,
+                lastName: userInfo.last_name,
+                phone: userInfo.phone,
+                driverLicense: userInfo.driver_license,
+                dateOfBirth: userInfo.date_of_birth,
+                role: userInfo.role,
+                emailVerified: userInfo.email_verified,
+                lastLogin: userInfo.last_login,
+                createdAt: userInfo.created_at,
+                updatedAt: userInfo.updated_at
+            };
 
             res.json({ 
                 status: 'success',
-                data: userInfo 
+                data: {
+                    user: userResponse
+                }
             });
         } catch (error) {
             console.error('Error in fetchUserById:', error);
@@ -152,12 +178,23 @@ const UserController = {
     async updateUserProfile(req, res) {
         try {
             const userId = req.user.userId;
-            const { firstName, lastName, phone } = req.body;
+            const { firstName, lastName, phone, driverLicense, dateOfBirth } = req.body;
+
+            console.log('Updating profile with data:', { 
+                userId, 
+                firstName, 
+                lastName, 
+                phone, 
+                driverLicense, 
+                dateOfBirth 
+            });
 
             const updatedUser = await UserModel.updateProfile(userId, {
                 firstName,
                 lastName,
-                phone
+                phone,
+                driverLicense,
+                dateOfBirth
             });
 
             if (!updatedUser) {
@@ -174,7 +211,13 @@ const UserController = {
                 firstName: updatedUser.first_name,
                 lastName: updatedUser.last_name,
                 phone: updatedUser.phone,
-                role: updatedUser.role
+                driverLicense: updatedUser.driver_license,
+                dateOfBirth: updatedUser.date_of_birth,
+                role: updatedUser.role,
+                emailVerified: updatedUser.email_verified,
+                lastLogin: updatedUser.last_login,
+                createdAt: updatedUser.created_at,
+                updatedAt: updatedUser.updated_at
             };
 
             res.json({ 

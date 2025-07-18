@@ -484,6 +484,12 @@ ALTER TABLE users
     ALTER COLUMN is_active SET NOT NULL,
     ALTER COLUMN token_version SET NOT NULL;
 
+-- Add email verification fields to users table
+ALTER TABLE users
+    ADD COLUMN IF NOT EXISTS verification_token VARCHAR(64),
+    ADD COLUMN IF NOT EXISTS verification_token_created_at TIMESTAMPTZ,
+    ADD COLUMN IF NOT EXISTS email_verified BOOLEAN DEFAULT FALSE;
+
 -- Add unique constraint on email if not exists
 DO $$ 
 BEGIN 

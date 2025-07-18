@@ -49,6 +49,73 @@ const generateTokens = (user) => {
     return { accessToken, refreshToken };
 };
 
+// Generate verification token
+const generateVerificationToken = () => {
+  return crypto.randomBytes(32).toString('hex');
+};
+
+// Send verification email
+const sendVerificationEmail = async (email, token) => {
+  const verificationLink = `${process.env.FRONTEND_URL}/verify-email?token=${token}`;
+  
+  const mailOptions = {
+    from: process.env.EMAIL_FROM,
+    to: email,
+    subject: 'Verify Your Email - SaamCars',
+    html: `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+        <div style="text-align: center; margin-bottom: 30px;">
+          <img src="${process.env.FRONTEND_URL}/logo.png" alt="SaamCars Logo" style="height: 50px; margin-bottom: 20px;">
+          <h1 style="color: #1E40AF; margin: 0; font-size: 24px;">Welcome to SaamCars!</h1>
+        </div>
+
+        <div style="background-color: #FFFFFF; border-radius: 8px; padding: 30px; box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);">
+          <h2 style="color: #1F2937; margin-top: 0; font-size: 20px;">Verify Your Email Address</h2>
+          
+          <p style="color: #4B5563; font-size: 16px; line-height: 24px; margin-bottom: 25px;">
+            Thank you for creating an account with SaamCars. To ensure the security of your account and access all features, please verify your email address by clicking the button below:
+          </p>
+
+          <div style="text-align: center; margin: 30px 0;">
+            <a href="${verificationLink}" 
+               style="background-color: #1E40AF; color: white; padding: 14px 28px; text-decoration: none; border-radius: 6px; font-weight: 600; display: inline-block; font-size: 16px;">
+              Verify Email Address
+            </a>
+          </div>
+
+          <p style="color: #6B7280; font-size: 14px; margin-top: 25px;">
+            If you're having trouble clicking the button, you can copy and paste this link into your browser:
+          </p>
+          
+          <p style="background-color: #F3F4F6; padding: 12px; border-radius: 4px; word-break: break-all; font-size: 14px; color: #374151;">
+            ${verificationLink}
+          </p>
+
+          <div style="margin-top: 30px; padding-top: 20px; border-top: 1px solid #E5E7EB;">
+            <p style="color: #6B7280; font-size: 14px; margin: 0;">
+              For security reasons, this verification link will expire in 24 hours.
+            </p>
+            <p style="color: #6B7280; font-size: 14px; margin-top: 10px;">
+              If you didn't create an account with SaamCars, you can safely ignore this email.
+            </p>
+          </div>
+        </div>
+
+        <div style="text-align: center; margin-top: 30px;">
+          <p style="color: #6B7280; font-size: 14px;">
+            © ${new Date().getFullYear()} SaamCars LLC. All rights reserved.
+          </p>
+          <p style="color: #6B7280; font-size: 14px;">
+            123 Auto Drive, Cartown, CT 12345
+          </p>
+        </div>
+      </div>
+    `
+  };
+
+  await transporter.sendMail(mailOptions);
+};
+
 // Registration
 exports.register = async (req, res) => {
     try {
@@ -97,7 +164,7 @@ exports.register = async (req, res) => {
         // Create user
         const userData = {
             email,
-            password: hashedPassword,
+            password: hashedPassword,  // This will be stored in password_hash column
             first_name: firstName,
             last_name: lastName,
             phone,
@@ -140,9 +207,16 @@ exports.register = async (req, res) => {
 exports.login = async (req, res) => {
     try {
         const { email, password } = req.body;
+        console.log('Login attempt for email:', email);
 
         // Find user
         const user = await userModel.findByEmail(email);
+        console.log('Found user:', { 
+            found: !!user, 
+            hasPassword: !!user?.password,
+            fields: user ? Object.keys(user) : null 
+        });
+
         if (!user) {
             return res.status(401).json({
                 status: 'error',
@@ -159,7 +233,20 @@ exports.login = async (req, res) => {
         }
 
         // Verify password
+        if (!password || !user.password) {
+            console.error('Missing password:', { 
+                hasPassword: !!password, 
+                hasStoredPassword: !!user.password 
+            });
+            return res.status(401).json({
+                status: 'error',
+                message: 'Invalid credentials. Please try again.'
+            });
+        }
+
         const isValidPassword = await bcrypt.compare(password, user.password);
+        console.log('Password validation result:', isValidPassword);
+
         if (!isValidPassword) {
             return res.status(401).json({
                 status: 'error',
@@ -179,6 +266,7 @@ exports.login = async (req, res) => {
                     email: user.email,
                     firstName: user.first_name,
                     lastName: user.last_name,
+                    phone: user.phone,
                     role: user.role
                 },
                 accessToken,
@@ -186,7 +274,11 @@ exports.login = async (req, res) => {
             }
         });
     } catch (error) {
-        console.error('Login error:', error);
+        console.error('Login error details:', {
+            message: error.message,
+            stack: error.stack,
+            name: error.name
+        });
         res.status(500).json({
             status: 'error',
             message: 'We encountered an issue while signing you in. Please try again later.'
@@ -436,4 +528,83 @@ exports.resetPassword = async (req, res) => {
             message: 'We encountered an issue resetting your password. Please try again later.'
         });
     }
+};
+
+// Request email verification
+exports.requestEmailVerification = async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const user = await userModel.findById(userId);
+
+    if (!user) {
+      return res.status(404).json({
+        status: 'error',
+        message: 'User not found'
+      });
+    }
+
+    if (user.email_verified) {
+      return res.status(400).json({
+        status: 'error',
+        message: 'Email is already verified'
+      });
+    }
+
+    // Generate and save verification token
+    const verificationToken = generateVerificationToken();
+    await userModel.saveVerificationToken(userId, verificationToken);
+
+    // Send verification email
+    await sendVerificationEmail(user.email, verificationToken);
+
+    res.json({
+      status: 'success',
+      message: 'Verification email sent successfully'
+    });
+  } catch (error) {
+    console.error('Error requesting email verification:', error);
+    res.status(500).json({
+      status: 'error',
+      message: 'Failed to send verification email'
+    });
+  }
+};
+
+// Verify email
+exports.verifyEmail = async (req, res) => {
+  try {
+    const { token } = req.body;
+
+    // Find user by verification token
+    const user = await userModel.findByVerificationToken(token);
+    if (!user) {
+      return res.status(400).json({
+        status: 'error',
+        message: 'Invalid or expired verification token'
+      });
+    }
+
+    // Check if token is expired (24 hours)
+    const tokenAge = Date.now() - new Date(user.verification_token_created_at).getTime();
+    if (tokenAge > 24 * 60 * 60 * 1000) {
+      return res.status(400).json({
+        status: 'error',
+        message: 'Verification token has expired'
+      });
+    }
+
+    // Mark email as verified and clear token
+    await userModel.verifyEmail(user.user_id);
+
+    res.json({
+      status: 'success',
+      message: 'Email verified successfully'
+    });
+  } catch (error) {
+    console.error('Error verifying email:', error);
+    res.status(500).json({
+      status: 'error',
+      message: 'Failed to verify email'
+    });
+  }
 };

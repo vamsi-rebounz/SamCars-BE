@@ -52,17 +52,19 @@ class UserModel {
         return result.rows[0];
     }
 
-    static async updateProfile(userId, { firstName, lastName, phone }) {
+    static async updateProfile(userId, { firstName, lastName, phone, driverLicense, dateOfBirth }) {
         const query = `
             UPDATE users 
             SET first_name = COALESCE($1, first_name),
                 last_name = COALESCE($2, last_name),
                 phone = COALESCE($3, phone),
+                driver_license = COALESCE($4, driver_license),
+                date_of_birth = COALESCE($5, date_of_birth),
                 updated_at = NOW()
-            WHERE user_id = $4 
+            WHERE user_id = $6 
             RETURNING *
         `;
-        const result = await db.query(query, [firstName, lastName, phone, userId]);
+        const result = await db.query(query, [firstName, lastName, phone, driverLicense, dateOfBirth, userId]);
         return result.rows[0];
     }
 
@@ -116,6 +118,38 @@ class UserModel {
             page,
             totalPages: Math.ceil(parseInt(countResult.rows[0].count) / limit)
         };
+    }
+
+    static async saveVerificationToken(userId, token) {
+        const query = `
+            UPDATE users 
+            SET verification_token = $1,
+                verification_token_created_at = NOW()
+            WHERE user_id = $2 
+            RETURNING *
+        `;
+        const result = await db.query(query, [token, userId]);
+        return result.rows[0];
+    }
+
+    static async findByVerificationToken(token) {
+        const query = 'SELECT * FROM users WHERE verification_token = $1';
+        const result = await db.query(query, [token]);
+        return result.rows[0];
+    }
+
+    static async verifyEmail(userId) {
+        const query = `
+            UPDATE users 
+            SET email_verified = true,
+                verification_token = NULL,
+                verification_token_created_at = NULL,
+                updated_at = NOW()
+            WHERE user_id = $1 
+            RETURNING *
+        `;
+        const result = await db.query(query, [userId]);
+        return result.rows[0];
     }
 }
 
