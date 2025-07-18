@@ -38,6 +38,8 @@ class VehicleModel {
                         WHEN v.status = 'available' THEN true
                         ELSE false
                     END as available,
+                    v.created_at,
+                    v.updated_at,
                     vi.image_urls as images
                 FROM vehicles v
                 JOIN vehicle_makes vm ON v.make_id = vm.make_id

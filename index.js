@@ -23,6 +23,9 @@ app.use(cors({
   ],
   credentials: true
 }));
+
+// Special route for Stripe webhook that needs raw body
+app.use('/api/payments/webhook', express.raw({ type: 'application/json' }));
  
 // Global middleware for parsing JSON and URL-encoded bodies
 app.use(express.json());

@@ -694,89 +694,70 @@ class InventoryModel {
         `;
     
         const filterStatsQuery = `
+            WITH category_counts AS (
+                SELECT
+                    'body_type' as category_type,
+                    body_type::text as category,
+                    COUNT(*) as count
+                FROM VEHICLES v
+                JOIN VEHICLE_MAKES vm ON v.make_id = vm.make_id
+                JOIN VEHICLE_MODELS vmod ON v.model_id = vmod.model_id
+                ${whereClause}
+                GROUP BY body_type
+                HAVING body_type IS NOT NULL
+                UNION ALL
+                SELECT
+                    'fuel_type' as category_type,
+                    fuel_type::text as category,
+                    COUNT(*) as count
+                FROM VEHICLES v
+                JOIN VEHICLE_MAKES vm ON v.make_id = vm.make_id
+                JOIN VEHICLE_MODELS vmod ON v.model_id = vmod.model_id
+                ${whereClause}
+                GROUP BY fuel_type
+                HAVING fuel_type IS NOT NULL
+            )
             SELECT
-              COUNT(*) FILTER (WHERE v.status = 'available') AS total_available,
-              COUNT(*) FILTER (WHERE v.status = 'sold') AS total_sold,
-              COUNT(*) FILTER (WHERE v.body_type = 'sedan') AS sedan_count,
-              COUNT(*) FILTER (WHERE v.body_type = 'suv') AS suv_count,
-              COUNT(*) FILTER (WHERE v.body_type = 'truck') AS truck_count,
-              COUNT(*) FILTER (WHERE v.fuel_type = 'electric') AS electric_count,
-              COUNT(*) FILTER (WHERE EXISTS (
-                  SELECT 1 FROM VEHICLE_TAG_MAPPING vtm
-                  JOIN VEHICLE_TAGS vt ON vtm.tag_id = vt.tag_id
-                  WHERE vtm.vehicle_id = v.vehicle_id AND vt.name = 'luxury'
-              )) AS luxury_count,
-              COUNT(*) FILTER (WHERE EXISTS (
-                  SELECT 1 FROM VEHICLE_TAG_MAPPING vtm
-                  JOIN VEHICLE_TAGS vt ON vtm.tag_id = vt.tag_id
-                  WHERE vtm.vehicle_id = v.vehicle_id AND vt.name = 'compact'
-              )) AS compact_count
+                COUNT(*) FILTER (WHERE v.status = 'available') AS total_available,
+                COUNT(*) FILTER (WHERE v.status = 'sold') AS total_sold,
+                (
+                    SELECT json_object_agg(
+                        category,
+                        count
+                    )
+                    FROM category_counts
+                ) as categories
             FROM VEHICLES v
             JOIN VEHICLE_MAKES vm ON v.make_id = vm.make_id
             JOIN VEHICLE_MODELS vmod ON v.model_id = vmod.model_id
             ${whereClause};
         `;
-    
+
         const client = await pool.connect();
         try {
-            const vehiclesResult = await client.query(vehicleQuery, [...values, parsedLimit, offset]);
-    
-            const vehicles = vehiclesResult.rows.map(row => ({
-                id: row.id,
-                make: row.make,
-                model: row.model,
-                year: row.year,
-                price: parseFloat(row.price),
-                mileage: row.mileage,
-                vin: row.vin,
-                exterior_color: row.exterior_color,
-                interior_color: row.interior_color,
-                transmission: row.transmission,
-                status: row.status,
-                fuel_type: row.fuel_type,
-                body_type: row.body_type,
-                engine: row.engine,
-                condition: row.condition,
-                location: row.location,
-                description: row.description,
-                tags: row.tags || [],
-                features: row.features || [],
-                image_url: Array.isArray(row.image_urls) && row.image_urls.length > 0 ? row.image_urls[0] : null,
-                images: Array.isArray(row.image_urls) ? row.image_urls : [],
-                carfax_link: row.carfax_link,
-                created_at: row.created_at,
-                updated_at: row.updated_at,
-                stock_number: row.stock_number
-            }));
-    
-            const countResult = await client.query(countQuery, values);
+            const [vehiclesResult, countResult, filterStatsResult] = await Promise.all([
+                client.query(vehicleQuery, [...values, parsedLimit, offset]),
+                client.query(countQuery, values),
+                client.query(filterStatsQuery, values)
+            ]);
+
             const totalItems = parseInt(countResult.rows[0].count);
             const totalPages = Math.ceil(totalItems / parsedLimit);
-    
-            const filterStatsResult = await client.query(filterStatsQuery, values);
-            const stats = filterStatsResult.rows[0];
-    
+
             return {
-                vehicles,
+                vehicles: vehiclesResult.rows,
                 pagination: {
                     current_page: parsedPage,
                     total_pages: totalPages,
                     total_items: totalItems,
                     items_per_page: parsedLimit,
                     has_next: parsedPage < totalPages,
-                    has_previous: parsedPage > 1,
+                    has_previous: parsedPage > 1
                 },
-                filters: {
-                    total_available: parseInt(stats.total_available),
-                    total_sold: parseInt(stats.total_sold),
-                    categories: {
-                        sedan: parseInt(stats.sedan_count),
-                        suv: parseInt(stats.suv_count),
-                        truck: parseInt(stats.truck_count),
-                        electric: parseInt(stats.electric_count),
-                        luxury: parseInt(stats.luxury_count || '0'),
-                        compact: parseInt(stats.compact_count || '0')
-                    }
+                filter_stats: {
+                    total_available: parseInt(filterStatsResult.rows[0].total_available),
+                    total_sold: parseInt(filterStatsResult.rows[0].total_sold),
+                    categories: filterStatsResult.rows[0].categories
                 }
             };
         } finally {

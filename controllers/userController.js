@@ -167,12 +167,21 @@ const UserController = {
                 });
             }
 
-            // Remove sensitive information
-            const { password, ...userInfo } = updatedUser;
+            // Transform the response to match frontend expectations
+            const userResponse = {
+                userId: updatedUser.user_id,
+                email: updatedUser.email,
+                firstName: updatedUser.first_name,
+                lastName: updatedUser.last_name,
+                phone: updatedUser.phone,
+                role: updatedUser.role
+            };
 
             res.json({ 
                 status: 'success',
-                data: userInfo,
+                data: {
+                    user: userResponse
+                },
                 message: 'Profile updated successfully' 
             });
         } catch (error) {
