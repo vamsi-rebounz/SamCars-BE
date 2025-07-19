@@ -30,7 +30,8 @@ const VEHICLE_STATUSES = {
     SOLD: 'sold',
     PENDING: 'pending',
     MAINTENANCE: 'maintenance',
-    RESERVED: 'reserved'
+    RESERVED: 'reserved',
+    HOLD: 'hold'
 };
 
 // Vehicle Conditions

@@ -54,18 +54,19 @@ class PaymentController {
 
   // Stripe webhook handler to save payment on success
   async handleStripeWebhook(req, res) {
-    console.log('Webhook received:', {
-      method: req.method,
-      path: req.path,
-      headers: req.headers,
-      rawBody: req.body ? req.body.toString() : null
-    });
+    console.log('=== WEBHOOK RECEIVED ===');
+    console.log('Method:', req.method);
+    console.log('Path:', req.path);
+    console.log('Headers:', JSON.stringify(req.headers, null, 2));
+    console.log('Body length:', req.body ? req.body.length : 0);
+    console.log('Body preview:', req.body ? req.body.toString().substring(0, 200) + '...' : 'No body');
+    console.log('========================');
 
     const sig = req.headers['stripe-signature'];
     let event;
 
     try {
-      event = stripe.webhooks.constructEvent(req.rawBody || req.body, sig, process.env.STRIPE_WEBHOOK_SECRET);
+      event = stripe.webhooks.constructEvent(req.body, sig, process.env.STRIPE_WEBHOOK_SECRET);
       console.log('Webhook event constructed:', event.type);
     } catch (err) {
       console.error('⚠️ Webhook signature verification failed:', err.message);
@@ -91,6 +92,12 @@ class PaymentController {
       const userId = metadata.user_id ? parseInt(metadata.user_id) : null;
       
       console.log('Parsed IDs:', { vehicleId, userId });
+
+      // Skip processing if no user_id (test events or invalid data)
+      if (!userId) {
+        console.log('Skipping payment processing - no user_id provided in metadata');
+        return res.json({ received: true, skipped: 'No user_id in metadata' });
+      }
 
       let client;
       try {
@@ -184,6 +191,195 @@ class PaymentController {
 
     // Return a 200 response to acknowledge receipt of the event
     res.json({ received: true });
+  }
+
+  // Get all payments for admin dashboard
+  async getAllPayments(req, res) {
+    try {
+      const { page = 1, limit = 10, status, type } = req.query;
+      const offset = (page - 1) * limit;
+
+      let query = `
+        SELECT 
+          p.payment_id as id,
+          p.amount,
+          p.currency,
+          p.description,
+          p.payment_method,
+          p.transaction_id,
+          p.status,
+          p.receipt_url,
+          p.created_at as date,
+          p.vehicle_id,
+          p.is_manual,
+          u.first_name || ' ' || u.last_name as customer,
+          u.email
+        FROM payments p
+        LEFT JOIN users u ON p.user_id = u.user_id
+      `;
+
+      const whereConditions = [];
+      const queryParams = [];
+
+      if (status && status !== 'all') {
+        whereConditions.push(`p.status = $${queryParams.length + 1}`);
+        queryParams.push(status);
+      }
+
+      if (type && type !== 'all') {
+        if (type === 'vehicle hold') {
+          whereConditions.push(`p.description ILIKE $${queryParams.length + 1}`);
+          queryParams.push('%hold%');
+        } else if (type === 'vehicle purchase') {
+          whereConditions.push(`p.description ILIKE $${queryParams.length + 1}`);
+          queryParams.push('%purchase%');
+        } else if (type === 'service') {
+          whereConditions.push(`p.service_id IS NOT NULL`);
+        } else if (type === 'stripe') {
+          whereConditions.push(`p.transaction_id LIKE $${queryParams.length + 1}`);
+          queryParams.push('pi_%');
+        }
+      }
+
+      if (whereConditions.length > 0) {
+        query += ` WHERE ${whereConditions.join(' AND ')}`;
+      }
+
+      query += ` ORDER BY p.created_at DESC LIMIT $${queryParams.length + 1} OFFSET $${queryParams.length + 2}`;
+      queryParams.push(limit, offset);
+
+      const result = await pool.query(query, queryParams);
+
+      // Enhanced response with vehicle information and better payment type detection
+      const payments = result.rows.map(payment => {
+        // Determine payment type more accurately
+        let paymentType = 'other';
+        if (payment.description && payment.description.toLowerCase().includes('hold')) {
+          paymentType = 'vehicle hold';
+        } else if (payment.vehicle_id) {
+          paymentType = 'vehicle purchase';
+        } else if (payment.description && payment.description.toLowerCase().includes('service')) {
+          paymentType = 'service';
+        }
+
+        // Determine if it's a Stripe payment
+        const isStripePayment = !!(payment.transaction_id && payment.transaction_id.startsWith('pi_'));
+
+        // Build vehicle information (simplified for now)
+        const vehicle = payment.vehicle_id ? {
+          id: payment.vehicle_id,
+          make: null,
+          model: null,
+          year: null,
+          stockNumber: null
+        } : null;
+
+        return {
+          id: payment.id,
+          customer: payment.customer || 'Guest User',
+          email: payment.email || 'N/A',
+          amount: parseFloat(payment.amount),
+          description: payment.description,
+          type: paymentType,
+          date: payment.date,
+          status: payment.status,
+          paymentMethod: payment.payment_method,
+          transactionId: payment.transaction_id,
+          receiptUrl: payment.receipt_url,
+          is_manual: payment.is_manual,
+          is_stripe: isStripePayment,
+          vehicle: vehicle
+        };
+      });
+
+      res.json({
+        success: true,
+        data: {
+          payments,
+          pagination: {
+            page: parseInt(page),
+            limit: parseInt(limit),
+            total: result.rows.length,
+            pages: 1
+          }
+        }
+      });
+
+    } catch (error) {
+      console.error('Error fetching payments:', error);
+      console.error('Error stack:', error.stack);
+      res.status(500).json({ error: 'Failed to fetch payments' });
+    }
+  }
+
+  // Add manual payment
+  async addManualPayment(req, res) {
+    try {
+      console.log('Received manual payment request:', req.body);
+      
+      const {
+        user_id,
+        amount,
+        payment_method,
+        description,
+        status = 'completed',
+        date,
+        vehicle_id,
+        service_id
+      } = req.body;
+
+      console.log('Parsed fields:', { user_id, amount, payment_method, description, status, date, vehicle_id, service_id });
+
+      if (!user_id || !amount || !payment_method || !description) {
+        console.log('Missing required fields:', { user_id, amount, payment_method, description });
+        return res.status(400).json({ error: 'Missing required fields' });
+      }
+
+      const query = `
+        INSERT INTO payments (
+          user_id, amount, currency, description, payment_method,
+          status, vehicle_id, service_id, is_manual, created_at, updated_at
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $10)
+        RETURNING payment_id
+      `;
+
+      const values = [
+        user_id,
+        amount,
+        'USD',
+        description,
+        payment_method,
+        status,
+        vehicle_id || null,
+        service_id || null,
+        true,
+        date ? new Date(date) : new Date()
+      ];
+
+      const result = await pool.query(query, values);
+
+      // If this is a vehicle hold payment, update vehicle status
+      if (vehicle_id && description.toLowerCase().includes('hold')) {
+        const updateVehicleQuery = `
+          UPDATE VEHICLES 
+          SET status = 'reserved', updated_at = NOW() 
+          WHERE vehicle_id = $1
+        `;
+        await pool.query(updateVehicleQuery, [vehicle_id]);
+      }
+
+      console.log('Payment inserted successfully with ID:', result.rows[0].payment_id);
+      
+      res.status(201).json({
+        success: true,
+        message: 'Manual payment added successfully',
+        payment_id: result.rows[0].payment_id
+      });
+    } catch (error) {
+      console.error('Error adding manual payment:', error);
+      console.error('Error stack:', error.stack);
+      res.status(500).json({ error: 'Failed to add manual payment' });
+    }
   }
 }
 

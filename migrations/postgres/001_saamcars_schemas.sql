@@ -2,7 +2,7 @@
 CREATE TYPE user_role AS ENUM ('customer', 'admin', 'sales', 'technician', 'manager');
 CREATE TYPE appointment_status AS ENUM ('pending', 'confirmed', 'completed', 'cancelled', 'rescheduled');
 CREATE TYPE payment_status AS ENUM ('pending', 'completed', 'failed', 'refunded');
-CREATE TYPE vehicle_status AS ENUM ('available', 'sold', 'pending', 'maintenance', 'reserved');
+CREATE TYPE vehicle_status AS ENUM ('available', 'sold', 'pending', 'maintenance', 'reserved', 'hold');
 CREATE TYPE vehicle_condition AS ENUM ('new', 'used', 'certified_pre_owned', 'excellent', 'good', 'fair');
 CREATE TYPE service_category AS ENUM ('maintenance', 'repair', 'inspection', 'detailing', 'tire_service');
 CREATE TYPE contact_method AS ENUM ('email', 'phone', 'sms', 'whatsapp');

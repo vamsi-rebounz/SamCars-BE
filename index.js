@@ -11,6 +11,7 @@ const authRoutes = require('./routes/authRoutes');
 const vehicleSalesRoutes = require('./routes/vehicleSalesRoutes');
 const paymentRoutes = require('./routes/paymentRoutes');
 const businessSettingsRoutes = require('./routes/businessSettingsRoutes');
+const dashboardRoutes = require('./routes/dashboardRoutes');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -41,6 +42,7 @@ app.use('/api/auction-tracker', auctionRoutes);
 app.use('/api/sales', vehicleSalesRoutes);
 app.use('/api/payments', paymentRoutes);
 app.use('/api/business-settings', businessSettingsRoutes);
+app.use('/api/dashboard', dashboardRoutes);
 
 // Health checks
 app.get('/health', (req, res) => {

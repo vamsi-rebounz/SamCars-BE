@@ -9,4 +9,14 @@ router.post('/webhook', PaymentController.handleStripeWebhook.bind(PaymentContro
 // Other routes with JSON parsing
 router.post('/create-checkout-session', PaymentController.createCheckoutSession.bind(PaymentController));
 
+// Admin routes for payment management
+console.log('Registering payment admin routes');
+router.get('/admin', PaymentController.getAllPayments.bind(PaymentController));
+router.post('/admin/manual', PaymentController.addManualPayment.bind(PaymentController));
+
+// Test route
+router.get('/test', (req, res) => {
+  res.json({ message: 'Payment routes working' });
+});
+
 module.exports = router;
