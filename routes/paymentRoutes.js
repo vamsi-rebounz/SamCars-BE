@@ -13,6 +13,8 @@ router.post('/create-checkout-session', PaymentController.createCheckoutSession.
 console.log('Registering payment admin routes');
 router.get('/admin', PaymentController.getAllPayments.bind(PaymentController));
 router.post('/admin/manual', PaymentController.addManualPayment.bind(PaymentController));
+router.put('/admin/:id', PaymentController.updatePayment.bind(PaymentController));
+router.delete('/admin/:id', PaymentController.deletePayment.bind(PaymentController));
 
 // Test route
 router.get('/test', (req, res) => {
