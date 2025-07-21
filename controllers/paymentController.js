@@ -251,6 +251,21 @@ class PaymentController {
         query += ` WHERE ${whereConditions.join(' AND ')}`;
       }
 
+      // Get total count for pagination
+      let countQuery = `
+        SELECT COUNT(*) as total
+        FROM payments p
+        LEFT JOIN users u ON p.user_id = u.user_id
+      `;
+      
+      if (whereConditions.length > 0) {
+        countQuery += ` WHERE ${whereConditions.join(' AND ')}`;
+      }
+      
+      const countResult = await pool.query(countQuery, queryParams.slice(0, -2));
+      const totalItems = parseInt(countResult.rows[0].total);
+      const totalPages = Math.ceil(totalItems / limit);
+
       query += ` ORDER BY p.created_at DESC LIMIT $${queryParams.length + 1} OFFSET $${queryParams.length + 2}`;
       queryParams.push(limit, offset);
 
@@ -363,10 +378,12 @@ class PaymentController {
         data: {
           payments,
           pagination: {
-            page: parseInt(page),
-            limit: parseInt(limit),
-            total: result.rows.length,
-            pages: 1
+            current_page: parseInt(page),
+            total_pages: totalPages,
+            total_items: totalItems,
+            items_per_page: parseInt(limit),
+            has_next: parseInt(page) < totalPages,
+            has_previous: parseInt(page) > 1
           }
         }
       });

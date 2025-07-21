@@ -122,7 +122,7 @@ function validateVehicleData(data, isPartialUpdate = false) {
     }
 
     // Validate Carfax link if provided
-    if (carfax_link !== undefined && !isSafeURL(carfax_link)) {
+    if (carfax_link !== undefined && carfax_link !== '' && !isSafeURL(carfax_link)) {
         throw new Error('Invalid Carfax link URL');
     }
 
