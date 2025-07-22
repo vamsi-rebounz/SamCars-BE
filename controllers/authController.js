@@ -377,7 +377,9 @@ exports.requestPasswordReset = async (req, res) => {
 
         // Send reset email
         const resetLink = `${process.env.FRONTEND_URL}/reset-password?token=${token}`;
+
         await transporter.sendMail({
+            from: 'admin@saamcars.com',
             to: email,
             subject: 'Reset Your SaamCars Password',
             html: `
