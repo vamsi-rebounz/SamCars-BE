@@ -11,8 +11,8 @@ router.post(
     '/add-vehicle',
     upload.array('images', 10),
     handleMulterError,
-    // authenticateToken,
-    // isAdmin,
+    authenticateToken,
+    isAdmin,
     InventoryController.addVehicle
 );
 
@@ -21,8 +21,8 @@ router.put(
     '/vehicles/update',
     upload.array('images', 10),
     handleMulterError,
-    // authenticateToken,
-    // isAdmin,
+    authenticateToken,
+    isAdmin,
     InventoryController.updateVehicle
 );
 

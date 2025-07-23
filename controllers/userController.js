@@ -17,7 +17,9 @@ const UserController = {
         const last_name = req.fields.last_name;
         const email = req.fields.email;
         const password = req.fields.password;
-        const role = req.fields.role;
+        // Ignore any role sent in the request
+        // const role = req.fields.role;
+        const role = 'customer'; // Always set to 'customer' for public registration
 
         if (!first_name || !last_name || !email || !password) {
             return res.status(400).json({ success: false, message: 'All fields (first_name, last_name, email, password) are required.' });
