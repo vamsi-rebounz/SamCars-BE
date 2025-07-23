@@ -1,127 +1,310 @@
 // controllers/userController.js
 const UserModel = require('../models/userModel');
+const jwt = require('jsonwebtoken');
+const bcrypt = require('bcrypt');
+const crypto = require('crypto');
+const nodemailer = require('nodemailer');
+require('dotenv').config();
 
 const UserController = {
-    /**
-     * Handles the creation of a new user.
-     * @param {object} req - Express request object.
-     * @param {object} res - Express response object.
-     */
+    
+    // Register a new user
     async registerUser(req, res) {
-        const { first_name, last_name, email, password, role } = req.body;
+        
+        // Using req.fields to handle form-data
+        console.log('req.fields:', req.fields);
+        const first_name = req.fields.first_name;
+        const last_name = req.fields.last_name;
+        const email = req.fields.email;
+        const password = req.fields.password;
+        // Ignore any role sent in the request
+        // const role = req.fields.role;
+        const role = 'customer'; // Always set to 'customer' for public registration
 
-        // Basic input validation
         if (!first_name || !last_name || !email || !password) {
-            return res.status(400).json({
-                success: false,
-                message: 'All fields (first_name, last_name, email, password) are required.'
-            });
+            return res.status(400).json({ success: false, message: 'All fields (first_name, last_name, email, password) are required.' });
         }
 
-        // Basic email format validation (more robust validation might be needed)
         if (!/\S+@\S+\.\S+/.test(email)) {
-            return res.status(400).json({
-                success: false,
-                message: 'Invalid email format.'
-            });
+            return res.status(400).json({ success: false, message: 'Invalid email format.' });
         }
 
-        // Password strength validation
         if (password.length < 8) {
-            return res.status(400).json({
-                success: false,
-                message: 'Password must be at least 8 characters long.'
-            });
+            return res.status(400).json({ success: false, message: 'Password must be at least 8 characters long.' });
         }
 
         try {
-            // UserModel.createUser now handles password hashing and database insertion.
-            // Pass the plain password to the model.
-            const newUser = await UserModel.createUser({
-                first_name,
-                last_name,
-                email,
-                password, // Pass plain password, model will hash it
-                role // Add role parameter
-            });
-
-            // The newUser object returned from the model will contain actual database columns
+            const newUser = await UserModel.createUser({ first_name, last_name, email, password, role });
             res.status(201).json({
                 success: true,
                 message: 'User created successfully.',
                 user: {
-                    id: newUser.user_id, // Use 'user_id' as per your database schema
-                    // Removed 'username' as it's not a column in your 'users' table
+                    id: newUser.user_id,
                     email: newUser.email,
                     first_name: newUser.first_name,
                     last_name: newUser.last_name,
-                    role: newUser.role, // Use the role returned from the DB (defaults to 'customer')
+                    role: newUser.role,
                     created_at: newUser.created_at
                 }
             });
         } catch (error) {
-            console.error('Error in registerUser controller:', error); // Log the full error for better debugging
+            console.error('Error in registerUser controller:', error);
             if (error.message === 'Email already registered.') {
-                return res.status(409).json({ // Conflict status for duplicate resource
-                    success: false,
-                    error_code: 'EMAIL_ALREADY_REGISTERED',
-                    message: error.message
+                return res.status(409).json({ success: false, error_code: 'EMAIL_ALREADY_REGISTERED', message: error.message });
+            }
+            res.status(500).json({ success: false, error_code: 'UNKNOWN_ERROR', message: 'An unexpected error occurred.' });
+        }
+    },
+
+    // Login a user
+    async loginUser(req, res) {
+        console.log('Login attempt received:', { email: req.fields.email });
+        const { email, password } = req.fields;
+    
+        if (!email || !password) {
+            return res.status(400).json({ message: 'Email and password are required.' });
+        }
+    
+        try {
+            console.log('Attempting to fetch user...');
+            const user = await UserModel.getUserByEmail(email);
+            console.log('User fetch result:', { found: !!user, userId: user?.user_id });
+            
+            if (!user) {
+                return res.status(401).json({ message: 'Invalid email or password.' });
+            }
+    
+            console.log('Comparing password...');
+            const passwordMatch = await bcrypt.compare(password, user.password_hash);
+            console.log('Password match result:', passwordMatch);
+            
+            if (!passwordMatch) {
+                return res.status(401).json({ message: 'Invalid email or password.' });
+            }
+    
+            const payload = {
+                user_id: user.user_id,
+                email: user.email,
+                role: user.role
+            };
+    
+            console.log('Generating tokens with payload:', payload);
+            const accessToken = jwt.sign(payload, process.env.JWT_SECRET, {
+                expiresIn: process.env.JWT_EXPIRES_IN || '15m'
+            });
+    
+            const refreshToken = jwt.sign(payload, process.env.JWT_REFRESH_SECRET, {
+                expiresIn: process.env.JWT_REFRESH_EXPIRES_IN || '7d'
+            });
+    
+            return res.status(200).json({
+                status: 'success',
+                message: 'Welcome back to SaamCars!',
+                data: {
+                    user: {
+                        userId: user.user_id,
+                        email: user.email,
+                        firstName: user.first_name,
+                        lastName: user.last_name,
+                        phone: user.phone,
+                        driverLicense: user.driver_license,
+                        dateOfBirth: user.date_of_birth,
+                        role: user.role,
+                        emailVerified: user.email_verified,
+                        lastLogin: user.last_login,
+                        createdAt: user.created_at,
+                        updatedAt: user.updated_at
+                    },
+                    accessToken,
+                    refreshToken
+                }
+            });
+    
+        } catch (error) {
+            console.error("Login error details:", {
+                message: error.message,
+                stack: error.stack,
+                name: error.name
+            });
+            res.status(500).json({ message: 'Internal server error' });
+        }
+    },
+
+    // Fetch a user by ID
+    async fetchUserById(req, res) {
+        try {
+            const userId = req.params.userId || req.user.userId;
+            console.log('Fetching user profile for ID:', userId);
+
+            const user = await UserModel.findById(userId);
+            if (!user) {
+                return res.status(404).json({ 
+                    status: 'error',
+                    message: 'User not found' 
                 });
             }
-            // Catch the generic server error message from the model
-            if (error.message.includes('Could not create user')) {
-                return res.status(500).json({
-                    success: false,
-                    error_code: 'SERVER_ERROR',
-                    message: error.message // Use the specific error message from the model
-                });
-            }
-            // Fallback for any other unexpected errors
-            res.status(500).json({
-                success: false,
-                error_code: 'UNKNOWN_ERROR',
-                message: 'An unexpected server error occurred during user registration.'
+
+            // Remove sensitive information and transform response
+            const { password, ...userInfo } = user;
+            const userResponse = {
+                userId: userInfo.user_id,
+                email: userInfo.email,
+                firstName: userInfo.first_name,
+                lastName: userInfo.last_name,
+                phone: userInfo.phone,
+                driverLicense: userInfo.driver_license,
+                dateOfBirth: userInfo.date_of_birth,
+                role: userInfo.role,
+                emailVerified: userInfo.email_verified,
+                lastLogin: userInfo.last_login,
+                createdAt: userInfo.created_at,
+                updatedAt: userInfo.updated_at
+            };
+
+            res.json({ 
+                status: 'success',
+                data: {
+                    user: userResponse
+                }
+            });
+        } catch (error) {
+            console.error('Error in fetchUserById:', error);
+            res.status(500).json({ 
+                status: 'error',
+                message: 'Failed to fetch user details' 
             });
         }
     },
-    
-    /**
-     * Handler for fetching a user by their ID.
-     * @param {*} req - Express request object
-     * @param {*} res - Express response object
-     */
-    async fetchUserById(req, res) {
-        const { id } = req.query;
 
-        if (!id) {
-            return res.status(400).json({
-                success: false,
-                error_code: 'MISSING_ID',
-                message: 'User ID is required'
-            });
-        }
-
+    // Update user profile
+    async updateUserProfile(req, res) {
         try {
-            const user = await UserModel.getUserById(id);
-            
-            if (!user) {
-                return res.status(404).json({
-                    success: false,
-                    error_code: 'USER_NOT_FOUND',
-                    message: 'User not found'
+            const userId = req.user.userId;
+            const { firstName, lastName, phone, driverLicense, dateOfBirth } = req.body;
+
+            console.log('Updating profile with data:', { 
+                userId, 
+                firstName, 
+                lastName, 
+                phone, 
+                driverLicense, 
+                dateOfBirth 
+            });
+
+            const updatedUser = await UserModel.updateProfile(userId, {
+                firstName,
+                lastName,
+                phone,
+                driverLicense,
+                dateOfBirth
+            });
+
+            if (!updatedUser) {
+                return res.status(404).json({ 
+                    status: 'error',
+                    message: 'User not found' 
                 });
             }
 
-            res.json({
-                success: true,
-                user
+            // Transform the response to match frontend expectations
+            const userResponse = {
+                userId: updatedUser.user_id,
+                email: updatedUser.email,
+                firstName: updatedUser.first_name,
+                lastName: updatedUser.last_name,
+                phone: updatedUser.phone,
+                driverLicense: updatedUser.driver_license,
+                dateOfBirth: updatedUser.date_of_birth,
+                role: updatedUser.role,
+                emailVerified: updatedUser.email_verified,
+                lastLogin: updatedUser.last_login,
+                createdAt: updatedUser.created_at,
+                updatedAt: updatedUser.updated_at
+            };
+
+            res.json({ 
+                status: 'success',
+                data: {
+                    user: userResponse
+                },
+                message: 'Profile updated successfully' 
             });
         } catch (error) {
-            console.error('Error in fetchUserById controller:', error);
-            res.status(500).json({
-                success: false,
-                error_code: 'SERVER_ERROR',
-                message: 'Could not fetch user details'
+            console.error('Error in updateUserProfile:', error);
+            res.status(500).json({ 
+                status: 'error',
+                message: 'Failed to update profile' 
+            });
+        }
+    },
+
+    // List all users (admin only)
+    async listUsers(req, res) {
+        try {
+            const page = parseInt(req.query.page) || 1;
+            const limit = parseInt(req.query.limit) || 10;
+            const role = req.query.role;
+
+            const result = await UserModel.listAll(page, limit, role);
+
+            res.json({
+                status: 'success',
+                data: {
+                    users: result.users.map(user => {
+                        const { password, ...userInfo } = user;
+                        return userInfo;
+                    }),
+                    pagination: {
+                        total: result.total,
+                        page: result.page,
+                        totalPages: result.totalPages
+                    }
+                }
+            });
+        } catch (error) {
+            console.error('Error in listUsers:', error);
+            res.status(500).json({ 
+                status: 'error',
+                message: 'Failed to fetch users list' 
+            });
+        }
+    },
+
+    // Update user status (admin only)
+    async updateUserStatus(req, res) {
+        try {
+            const { userId } = req.params;
+            const { isActive } = req.body;
+
+            if (typeof isActive !== 'boolean') {
+                return res.status(400).json({ 
+                    status: 'error',
+                    message: 'isActive must be a boolean value' 
+                });
+            }
+
+            const updatedUser = await UserModel.setActiveStatus(userId, isActive);
+            
+            if (!updatedUser) {
+                return res.status(404).json({ 
+                    status: 'error',
+                    message: 'User not found' 
+                });
+            }
+
+            // Remove sensitive information
+            const { password, ...userInfo } = updatedUser;
+
+            res.json({ 
+                status: 'success',
+                data: userInfo,
+                message: `User ${isActive ? 'activated' : 'deactivated'} successfully` 
+            });
+        } catch (error) {
+            console.error('Error in updateUserStatus:', error);
+            res.status(500).json({ 
+                status: 'error',
+                message: 'Failed to update user status' 
             });
         }
     }

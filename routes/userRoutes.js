@@ -1,15 +1,17 @@
 // routes/userRoutes.js
 const express = require('express');
 const UserController = require('../controllers/userController');
+const { authenticateToken, isAdmin } = require('../middleware/authMiddleware');
 
 const router = express.Router();
 
-// POST route for user registration/signup
-// Endpoint: /users/register
-router.post('/register', UserController.registerUser);
+// Protected Routes - User Profile Management
+router.get('/profile', authenticateToken, UserController.fetchUserById);
+router.put('/profile/update', authenticateToken, UserController.updateUserProfile);
 
-//GET route for fetch user by id
-// Endpoint: /users/fetch-by-id
-router.get('/fetch-by-id', UserController.fetchUserById);
+// Admin Routes
+router.get('/list', authenticateToken, isAdmin, UserController.listUsers);
+router.get('/:userId', authenticateToken, isAdmin, UserController.fetchUserById);
+router.put('/:userId/status', authenticateToken, isAdmin, UserController.updateUserStatus);
 
 module.exports = router;

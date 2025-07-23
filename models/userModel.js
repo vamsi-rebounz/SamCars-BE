@@ -1,137 +1,156 @@
 // models/userModel.js
-const pool = require('../config/db');
-const bcrypt = require('bcrypt');
+const db = require('../config/db');
 
-const UserModel = {
-    /**
-     * Creates a new user in the database.
-     * Hashes the password before storing it.
-     * @param {object} userData - Object containing user details.
-     * @param {string} userData.first_name - User's first name.
-     * @param {string} userData.last_name - User's last name.
-     * @param {string} userData.email - User's email (must be unique).
-     * @param {string} userData.password - User's plain text password.
-     * @param {string} [userData.role='customer'] - Optional: User's role (defaults to 'customer' in DB).
-     * @param {boolean} [userData.email_verified=false] - Optional: Email verification status (defaults to false via DB).
-     * @param {string} [userData.phone] - Optional: User's phone number.
-     * @param {string} [userData.driver_license] - Optional: User's driver's license.
-     * @param {string} [userData.date_of_birth] - Optional: User's date of birth (ISO 8601 date string).
-     * @returns {Promise<object|null>} - The created user object (excluding password_hash) or null if creation fails.
-     */
-    async createUser(userData) {
-        const {
-            first_name,
-            last_name,
-            email,
-            password,
-            // Removed 'username' as it's not in your table schema
-            // 'role' will default in DB, but can be passed if needed
-            role = 'customer', // Align with your DB default if not provided
-            email_verified = false,
-            phone = null, // Default to null if not provided
-            driver_license = null, // Default to null if not provided
-            date_of_birth = null // Default to null if not provided
-        } = userData;
-
-        try {
-            // Hash the password
-            const saltRounds = 10; // Cost factor for hashing
-            const password_hash = await bcrypt.hash(password, saltRounds);
-
-            // Updated to use lowercase table name
-            const checkQuery = 'SELECT user_id FROM users WHERE email = $1';
-            const existingUser = await pool.query(checkQuery, [email]);
-
-            if (existingUser.rows.length > 0) {
-                // Throw an error that the controller can specifically catch for 'email already registered'
-                const error = new Error('Email already registered.');
-                error.code = '23505'; // PostgreSQL unique violation error code
-                error.constraint = 'users_email_key'; // Name of the unique constraint on email
-                throw error;
-            }
-
-            // Updated to use lowercase table name
-            const result = await pool.query(
-                `INSERT INTO users (
-                    first_name,
-                    last_name,
-                    email,
-                    password_hash,
-                    role,             -- This column exists
-                    email_verified,   -- This column exists
-                    phone,            -- This column exists
-                    driver_license,   -- This column exists
-                    date_of_birth     -- This column exists
-                )
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-                RETURNING user_id, first_name, last_name, email, role, email_verified, created_at, updated_at`, // Return actual column names
-                [
-                    first_name,
-                    last_name,
-                    email,
-                    password_hash,
-                    role,
-                    email_verified,
-                    phone,
-                    driver_license,
-                    date_of_birth
-                ]
-            );
-
-            // Return the newly created user (without the hashed password)
-            return result.rows[0];
-        } catch (error) {
-            console.error('Error creating user in model:', error);
-            // Check for unique constraint violation (e.g., duplicate email)
-            if (error.code === '23505') { // PostgreSQL unique violation error code
-                if (error.constraint === 'users_email_key') {
-                    throw new Error('Email already registered.');
-                }
-                // If you had other unique constraints (e.g., on phone or driver_license),
-                // you would add more `if (error.constraint === 'your_constraint_name')` checks here.
-                throw new Error('A unique constraint violation occurred.');
-            }
-            // Re-throw generic server error for controller
-            throw new Error('Could not create user due to a server error.');
-        }
-    },
-
-    /**
-     * Fetches a user by their ID from the database.
-     * @param {string|number} userId - The ID of the user to fetch.
-     * @returns {Promise<object|null>} The user object (excluding password_hash) or null if not found.
-     */
-    async getUserById(userId) {
-        try {
-            const query = `
-                SELECT 
-                    user_id,
-                    first_name,
-                    last_name,
-                    email,
-                    role,
-                    email_verified,
-                    phone,
-                    driver_license,
-                    date_of_birth,
-                    created_at,
-                    updated_at,
-                    last_login
-                FROM users 
-                WHERE user_id = $1`;
-            
-            const result = await pool.query(query, [userId]);
-            
-            if (result.rows.length === 0) {
-                return null;
-            }
-            
-            return result.rows[0];
-        } catch (error) {
-            console.error('Error in getUserById:', error);
-            throw new Error('Could not fetch user details.');
-        }
+class UserModel {
+    static async create({ email, password, first_name, last_name, phone, role, is_active, token_version }) {
+        const query = `
+            INSERT INTO users (
+                email, password, first_name, last_name, 
+                phone, role, is_active, token_version,
+                created_at, updated_at
+            ) 
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW(), NOW())
+            RETURNING *
+        `;
+        const values = [email, password, first_name, last_name, phone, role, is_active, token_version];
+        const result = await db.query(query, values);
+        return result.rows[0];
     }
-};
+
+    static async findByEmail(email) {
+        const query = 'SELECT * FROM users WHERE email = $1';
+        const result = await db.query(query, [email]);
+            return result.rows[0];
+    }
+
+    static async findById(userId) {
+        const query = 'SELECT * FROM users WHERE user_id = $1';
+        const result = await db.query(query, [userId]);
+        return result.rows[0];
+    }
+
+    static async updatePassword(userId, newPassword) {
+        const query = `
+            UPDATE users 
+            SET password = $1, updated_at = NOW() 
+            WHERE user_id = $2 
+            RETURNING *
+        `;
+        const result = await db.query(query, [newPassword, userId]);
+        return result.rows[0];
+    }
+
+    static async incrementTokenVersion(userId) {
+        const query = `
+            UPDATE users 
+            SET token_version = token_version + 1, 
+                updated_at = NOW() 
+            WHERE user_id = $1 
+            RETURNING *
+        `;
+        const result = await db.query(query, [userId]);
+        return result.rows[0];
+    }
+
+    static async updateProfile(userId, { firstName, lastName, phone, driverLicense, dateOfBirth }) {
+        const query = `
+            UPDATE users 
+            SET first_name = COALESCE($1, first_name),
+                last_name = COALESCE($2, last_name),
+                phone = COALESCE($3, phone),
+                driver_license = COALESCE($4, driver_license),
+                date_of_birth = COALESCE($5, date_of_birth),
+                updated_at = NOW()
+            WHERE user_id = $6 
+            RETURNING *
+        `;
+        const result = await db.query(query, [firstName, lastName, phone, driverLicense, dateOfBirth, userId]);
+        return result.rows[0];
+    }
+
+    static async setActiveStatus(userId, isActive) {
+        const query = `
+            UPDATE users 
+            SET is_active = $1, 
+                updated_at = NOW() 
+            WHERE user_id = $2 
+            RETURNING *
+        `;
+        const result = await db.query(query, [isActive, userId]);
+        return result.rows[0];
+    }
+
+    static async delete(userId) {
+        // Soft delete - just deactivate the user
+        return this.setActiveStatus(userId, false);
+    }
+
+    static async listAll(page = 1, limit = 10, role = null) {
+        const offset = (page - 1) * limit;
+        let query = `
+            SELECT user_id, email, first_name, last_name, 
+                   phone, role, is_active, created_at 
+            FROM users
+            WHERE 1=1
+        `;
+        const values = [];
+
+        if (role) {
+            query += ' AND role = $1';
+            values.push(role);
+        }
+
+        query += `
+            ORDER BY created_at DESC
+            LIMIT $${values.length + 1} OFFSET $${values.length + 2}
+        `;
+        values.push(limit, offset);
+
+        const result = await db.query(query, values);
+        
+        // Get total count for pagination
+        const countQuery = 'SELECT COUNT(*) FROM users' + (role ? ' WHERE role = $1' : '');
+        const countResult = await db.query(countQuery, role ? [role] : []);
+        
+        return {
+            users: result.rows,
+            total: parseInt(countResult.rows[0].count),
+            page,
+            totalPages: Math.ceil(parseInt(countResult.rows[0].count) / limit)
+        };
+    }
+
+    static async saveVerificationToken(userId, token) {
+        const query = `
+            UPDATE users 
+            SET verification_token = $1,
+                verification_token_created_at = NOW()
+            WHERE user_id = $2 
+            RETURNING *
+        `;
+        const result = await db.query(query, [token, userId]);
+        return result.rows[0];
+    }
+
+    static async findByVerificationToken(token) {
+        const query = 'SELECT * FROM users WHERE verification_token = $1';
+        const result = await db.query(query, [token]);
+        return result.rows[0];
+    }
+
+    static async verifyEmail(userId) {
+        const query = `
+            UPDATE users 
+            SET email_verified = true,
+                verification_token = NULL,
+                verification_token_created_at = NULL,
+                updated_at = NOW()
+            WHERE user_id = $1 
+            RETURNING *
+        `;
+        const result = await db.query(query, [userId]);
+        return result.rows[0];
+    }
+}
 
 module.exports = UserModel;
