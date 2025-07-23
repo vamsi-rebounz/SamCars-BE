@@ -4,7 +4,7 @@ const stripe = Stripe(process.env.STRIPE_SECRET_KEY);
 const pool = require('../config/db');
 const VehicleModel = require('../models/vehicleModel');
 const crypto = require('crypto');
-const bcrypt = require('bcrypt');
+const bcrypt = require('bcryptjs');
 
 class PaymentController {
   // Create checkout session (same as before)
