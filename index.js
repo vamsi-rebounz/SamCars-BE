@@ -17,11 +17,25 @@ const app = express();
 const PORT = process.env.PORT || 3000;
  
 // CORS should come before routes
-app.use(cors({
-  origin: [
+
+const isProduction = process.env.NODE_ENV === 'production';
+let allowedOrigins = [];
+if(isProduction) {
+  allowedOrigins = [
     "https://www.saamcars.com",
-  ],
-  credentials: true
+  ];
+} else {
+  allowedOrigins = [
+    "http://localhost:5173",
+  ];
+}
+
+app.use(cors({
+  origin: allowedOrigins,
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  exposedHeaders: ['Content-Range', 'X-Total-Count']
 }));
 
 // Special route for Stripe webhook that needs raw body

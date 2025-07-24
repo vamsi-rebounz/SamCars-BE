@@ -1,6 +1,8 @@
 const { Pool } = require('pg');
 require('dotenv').config(); // Load environment variables from .env file
 
+// Check if the environment is production or development
+const isProduction = process.env.NODE_ENV === 'production';
 /**
  * Creates a new PostgreSQL connection pool
  */
@@ -10,9 +12,7 @@ const pool = new Pool({
     database: process.env.DB_DATABASE,
     password: process.env.DB_PASSWORD,
     port: process.env.DB_PORT,
-    ssl: {
-        rejectUnauthorized: false
-    }
+    ssl: isProduction ? { rejectUnauthorized: false } : false
 });
 
 // Test the database connection

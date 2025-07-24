@@ -13,10 +13,10 @@ function ask(question) {
 
 async function createAdmin() {
   try {
-    const email = (await ask('Email (default: admin@samcars123.com): ')) || 'admin@samcars123.com';
-    const password = (await ask('Password (default: admin123): ')) || 'admin123';
-    const first_name = (await ask('First name (default: Admin123): ')) || 'Admin123';
-    const last_name = (await ask('Last name (default: SamCars123): ')) || 'SamCars123';
+    const email = (await ask('Email (default: admin@samcars123.com): ')) || 'admin@saamcars.com';
+    const password = (await ask('Password (default: admin123): ')) || 'Saamcars@045';
+    const first_name = (await ask('First name (default: Admin123): ')) || 'Saam';
+    const last_name = (await ask('Last name (default: SamCars123): ')) || 'Cars';
     const phone = (await ask('Phone (default: 09123456789): ')) || '09123456789';
     const role = 'admin';
     const is_active = true;
