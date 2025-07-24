@@ -19,9 +19,7 @@ const PORT = process.env.PORT || 3000;
 // CORS should come before routes
 app.use(cors({
   origin: [
-    "http://localhost:5173",
-    "http://localhost:5174",
-    "http://localhost:5175"
+    "https://www.saamcars.com",
   ],
   credentials: true
 }));
