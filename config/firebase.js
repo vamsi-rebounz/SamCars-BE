@@ -1,7 +1,8 @@
 const { initializeApp } = require('firebase/app');
 const { getStorage } = require('firebase/storage');
 const admin = require('firebase-admin');
-const serviceAccount = require('./serviceAccountKey.json');
+// const serviceAccount = require('./serviceAccountKey.json');
+const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_KEY);
 
 // Firebase config for client SDK
 const firebaseConfig = {

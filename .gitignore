@@ -1,2 +1,4 @@
 .env
+config/serviceAccountKey.json
+config/serviceAccountKey-Vamsi.json
 scripts/
