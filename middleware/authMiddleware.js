@@ -105,4 +105,29 @@ function isAdminOrSelf(userIdField) {
     };
 }
 
-module.exports = { authenticateToken, isAdmin, isAdminOrSelf };
+// Middleware: Try to authenticate, but don't block guests
+async function tryAuthenticateToken(req, res, next) {
+    try {
+        const authHeader = req.headers['authorization'];
+        const token = authHeader && authHeader.split(' ')[1];
+        if (!token) return next();
+
+        // Verify the token
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        const user = await userModel.findById(decoded.userId);
+        if (!user || !user.is_active || user.token_version !== decoded.tokenVersion) {
+            return next();
+        }
+        req.user = {
+            userId: user.user_id,
+            email: user.email,
+            role: user.role,
+            tokenVersion: user.token_version
+        };
+    } catch (error) {
+        // Ignore token errors, treat as guest
+    }
+    next();
+}
+
+module.exports = { authenticateToken, isAdmin, isAdminOrSelf, tryAuthenticateToken };
