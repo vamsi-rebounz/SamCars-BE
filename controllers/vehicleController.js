@@ -18,8 +18,11 @@ class VehicleController {
                 });
             }
 
+            // Check if user is admin
+            const isAdmin = req.user && req.user.role === 'admin';
+            
             // Delegate data fetching to the VehicleModel
-            const vehicleData = await VehicleModel.getVehicleById(parseInt(id));
+            const vehicleData = await VehicleModel.getVehicleById(parseInt(id), { includePurchaseDetails: isAdmin });
 
             if (!vehicleData) {
                 return res.status(404).json({

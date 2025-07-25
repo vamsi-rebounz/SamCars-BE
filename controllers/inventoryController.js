@@ -29,11 +29,49 @@ class InventoryController {
                 features: req.body.features ? (typeof req.body.features === 'string' ? JSON.parse(req.body.features) : req.body.features) : [],
                 carfax_link: req.body.carfax_link,
                 location: req.body.location,
-                stock_number: req.body.stock_number
+                stock_number: req.body.stock_number,
+                is_bought_in_auction: req.body.is_bought_in_auction === 'true' || req.body.is_bought_in_auction === true,
+                seller_name: req.body.seller_name,
+                seller_email: req.body.seller_email,
+                seller_phone: req.body.seller_phone,
+                bought_price: req.body.bought_price ? parseFloat(req.body.bought_price) : null,
+                repair_costs: req.body.repair_costs ? parseFloat(req.body.repair_costs) : null,
+                sold_price: req.body.sold_price ? parseFloat(req.body.sold_price) : null
             };
 
             console.log('Received vehicle data:', vehicleData);
             console.log('Received files:', req.files);
+
+            // Stricter validation for required fields
+            const requiredFields = [
+                'make', 'model', 'year', 'price', 'mileage', 'vin',
+                'transmission', 'body_type', 'fuel_type', 'condition', 'description', 'status'
+            ];
+            for (const field of requiredFields) {
+                if (
+                    vehicleData[field] === undefined || vehicleData[field] === null || vehicleData[field] === '' ||
+                    (typeof vehicleData[field] === 'number' && isNaN(vehicleData[field]))
+                ) {
+                    return res.status(400).json({ error: `Missing or invalid required field: ${field}` });
+                }
+            }
+            // VIN strict validation
+            const vinRegex = /^[A-HJ-NPR-Z0-9]{17}$/i;
+            if (!vinRegex.test(vehicleData.vin)) {
+                return res.status(400).json({ error: 'VIN must be exactly 17 characters, alphanumeric, and not contain I, O, or Q.' });
+            }
+            // Year validation
+            const currentYear = new Date().getFullYear();
+            if (vehicleData.year < 1900 || vehicleData.year > currentYear + 1) {
+                return res.status(400).json({ error: `Year must be between 1900 and ${currentYear + 1}` });
+            }
+            // Price and mileage validation
+            if (vehicleData.price <= 0) {
+                return res.status(400).json({ error: 'Price must be greater than 0' });
+            }
+            if (vehicleData.mileage < 0) {
+                return res.status(400).json({ error: 'Mileage must be 0 or greater' });
+            }
 
             // Validate request data
             const validationError = validateVehicleData(vehicleData);
@@ -92,7 +130,10 @@ class InventoryController {
                 if (req.body.location) vehicleData.location = req.body.location;
                 if (req.body.body_type) vehicleData.body_type = req.body.body_type;
                 if (req.body.stock_number) vehicleData.stock_number = req.body.stock_number;
-
+                if (req.body.is_bought_in_auction !== undefined) vehicleData.is_bought_in_auction = req.body.is_bought_in_auction === 'true' || req.body.is_bought_in_auction === true;
+                if (req.body.seller_name) vehicleData.seller_name = req.body.seller_name;
+                if (req.body.seller_email) vehicleData.seller_email = req.body.seller_email;
+                if (req.body.seller_phone) vehicleData.seller_phone = req.body.seller_phone;
                 // Handle features and tags
                 if (req.body.features) {
                     vehicleData.features = typeof req.body.features === 'string' ? 
@@ -198,8 +239,16 @@ class InventoryController {
                 search = '',
                 sort_by = 'date_added',
                 sort_order = 'desc',
-                status = 'all'
+                status = 'all',
+                auction = 'false'
             } = req.query;
+
+            // Only allow status values that match the DB enum
+            const allowedStatuses = ['available', 'sold', 'under_maintenance', 'under_inspection', 'reserved'];
+            let statusFilter = status;
+            if (status !== 'all' && !allowedStatuses.includes(status)) {
+                return res.status(400).json({ status: 'error', message: `Invalid status filter. Allowed: ${allowedStatuses.join(', ')}` });
+            }
 
             const inventoryData = await InventoryModel.getInventory({
                 category,
@@ -208,7 +257,8 @@ class InventoryController {
                 search,
                 sortBy: sort_by,
                 sortOrder: sort_order,
-                status
+                status: statusFilter,
+                auction: auction === 'true' || auction === true
             }, buildWhereClauseForInventory); // Pass the helper function
 
             res.status(200).json({

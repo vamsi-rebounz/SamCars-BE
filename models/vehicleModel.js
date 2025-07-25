@@ -8,7 +8,7 @@ class VehicleModel {
      * @param {number} vehicleId - The ID of the vehicle to retrieve.
      * @returns {Promise<object|null>} The vehicle data object, or null if not found.
      */
-    static async getVehicleById(vehicleId) {
+    static async getVehicleById(vehicleId, options = {}) {
         const client = await pool.connect();
         try {
             // Get vehicle basic details, including make, model, and images
@@ -41,11 +41,11 @@ class VehicleModel {
                     v.created_at,
                     v.updated_at,
                     vi.image_urls as images
+                    ${options.includePurchaseDetails ? ', v.is_bought_in_auction, v.seller_name, v.seller_email, v.seller_phone, v.bought_price, v.repair_costs, v.sold_price' : ''}
                 FROM vehicles v
                 JOIN vehicle_makes vm ON v.make_id = vm.make_id
                 JOIN vehicle_models vmod ON v.model_id = vmod.model_id
                 LEFT JOIN vehicle_images vi ON v.vehicle_id = vi.vehicle_id
-                LEFT JOIN users u ON u.role = 'sales' -- Assuming one sales user for demo, adjust as needed
                 WHERE v.vehicle_id = $1
                 LIMIT 1;
             `;
@@ -76,12 +76,35 @@ class VehicleModel {
             const tagsResult = await client.query(tagsQuery, [vehicleId]);
 
             // Combine all data
-            return {
-                ...vehicleData,
-                features: featuresResult.rows[0]?.features || [], // Use optional chaining for safety
+            // Remove purchase-related fields from top-level
+            const {
+                is_bought_in_auction,
+                seller_name,
+                seller_email,
+                seller_phone,
+                bought_price,
+                repair_costs,
+                sold_price,
+                ...rest
+            } = vehicleData;
+            const result = {
+                ...rest,
+                features: featuresResult.rows[0]?.features || [],
                 tags: tagsResult.rows[0]?.tags || [],
                 images: vehicleData.images || []
             };
+            if (options.includePurchaseDetails) {
+                result.purchase_details = {
+                    is_bought_in_auction,
+                    seller_name,
+                    seller_email,
+                    seller_phone,
+                    bought_price,
+                    repair_costs,
+                    sold_price
+                };
+            }
+            return result;
 
         } finally {
             client.release();

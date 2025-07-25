@@ -5,7 +5,7 @@ const { authenticateToken, authorizeRoles } = require('../middleware/authMiddlew
 
 // Get vehicle by ID
 router.get('/:id', 
-    //authenticateToken,
+    authenticateToken,
     VehicleController.getVehicleById
 );
 

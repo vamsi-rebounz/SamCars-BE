@@ -7,16 +7,16 @@
 -- (Original base schema and enums)
 
 -- Create enum types
-CREATE TYPE user_role AS ENUM ('customer', 'admin', 'sales', 'technician', 'manager');
-CREATE TYPE appointment_status AS ENUM ('pending', 'confirmed', 'completed', 'cancelled', 'rescheduled');
+CREATE TYPE user_role AS ENUM ('customer', 'admin');
+CREATE TYPE appointment_status AS ENUM ('pending', 'confirmed', 'cancelled', 'rescheduled');
 CREATE TYPE payment_status AS ENUM ('pending', 'completed', 'failed', 'refunded');
-CREATE TYPE vehicle_status AS ENUM ('available', 'sold', 'pending', 'maintenance', 'reserved', 'hold');
+CREATE TYPE vehicle_status AS ENUM ('available', 'sold', 'under_maintenance','under_inspection', 'reserved');
 CREATE TYPE vehicle_condition AS ENUM ('new', 'used', 'certified_pre_owned', 'excellent', 'good', 'fair');
 CREATE TYPE service_category AS ENUM ('maintenance', 'repair', 'inspection', 'detailing', 'tire_service');
 CREATE TYPE contact_method AS ENUM ('email', 'phone', 'sms', 'whatsapp');
 CREATE TYPE fuel_type AS ENUM ('gasoline', 'diesel', 'electric', 'hybrid', 'plug_in_hybrid');
-CREATE TYPE transmission_type AS ENUM ('automatic', 'manual', 'cvt', 'semi_automatic');
-CREATE TYPE body_type AS ENUM ('sedan', 'suv', 'truck', 'coupe', 'convertible', 'hatchback', 'minivan', 'van', 'wagon');
+CREATE TYPE transmission_type AS ENUM ('manual', 'automatic', 'cvt', 'amt', 'dct', 'dsg', 'semi_automatic', 'ivt', 'hydrostatic', 'mmt', 'hybird', 'torque_converter', 'tip_tronic');
+CREATE TYPE body_type AS ENUM ('sports', 'sedan', 'hatchback', 'suv', 'coupe', 'convertible', 'van', 'minivan', 'wagon', 'pickup_truck', 'cargo_van', 'bus');
 
 -- Users and Authentication
 CREATE TABLE USERS (
@@ -24,12 +24,16 @@ CREATE TABLE USERS (
     email VARCHAR(255) NOT NULL UNIQUE,
     first_name VARCHAR(100) NOT NULL,
     last_name VARCHAR(100) NOT NULL,
-    password_hash VARCHAR(255) NOT NULL,
+    password VARCHAR(255) NOT NULL,
     role user_role NOT NULL DEFAULT 'customer',
     email_verified BOOLEAN NOT NULL DEFAULT FALSE,
     phone VARCHAR(20),
     driver_license VARCHAR(50),
     date_of_birth DATE,
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    token_version INTEGER NOT NULL DEFAULT 0,
+    verification_token VARCHAR(64),
+    verification_token_created_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     last_login TIMESTAMPTZ
@@ -48,8 +52,10 @@ CREATE TABLE USER_SESSIONS (
 
 -- Create indexes
 CREATE INDEX idx_users_email ON USERS(email);
+CREATE INDEX idx_users_role ON USERS(role);
+CREATE INDEX idx_users_is_active ON USERS(is_active);
 CREATE INDEX idx_user_sessions_user_id ON USER_SESSIONS(user_id);
-CREATE INDEX idx_user_sessions_token ON USER_SESSIONS(token); 
+CREATE INDEX idx_user_sessions_token ON USER_SESSIONS(token);
 
 -- Password reset tokens table
 CREATE TABLE PASSWORD_RESET_TOKENS (
@@ -66,23 +72,11 @@ CREATE INDEX idx_password_reset_tokens_user ON PASSWORD_RESET_TOKENS(user_id);
 CREATE INDEX idx_password_reset_tokens_expires ON PASSWORD_RESET_TOKENS(expires_at);
 
 -- Create Users Table (IF NOT EXISTS for idempotency)
-CREATE TABLE IF NOT EXISTS USERS (
-    user_id SERIAL PRIMARY KEY,
-    first_name VARCHAR(100) NOT NULL,
-    last_name VARCHAR(100) NOT NULL,
-    email VARCHAR(255) NOT NULL UNIQUE,
-    password_hash VARCHAR(255) NOT NULL,
-    role VARCHAR(50) DEFAULT 'customer' NOT NULL,
-    email_verified BOOLEAN DEFAULT FALSE NOT NULL,
-    phone VARCHAR(20),
-    driver_license VARCHAR(50),
-    date_of_birth DATE,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-);
+-- This block is removed as per the edit hint to remove duplicate CREATE TABLE IF NOT EXISTS USERS.
+-- The main USERS table is now the only one.
 
 -- Create an index on email for faster lookups
-CREATE INDEX IF NOT EXISTS idx_users_email ON USERS(email); 
+CREATE INDEX IF NOT EXISTS idx_users_email ON USERS(email);
 
 -- Vehicles
 CREATE TABLE VEHICLE_MAKES (
@@ -121,7 +115,14 @@ CREATE TABLE VEHICLES (
     is_featured BOOLEAN NOT NULL DEFAULT FALSE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    carfax_link TEXT
+    carfax_link TEXT,
+    is_bought_in_auction BOOLEAN DEFAULT FALSE,
+    seller_name VARCHAR(100),
+    seller_email VARCHAR(255),
+    seller_phone VARCHAR(20),
+    bought_price DECIMAL(10,2),
+    repair_costs DECIMAL(10,2),
+    sold_price DECIMAL(10,2)
 );
 
 CREATE TABLE VEHICLE_FEATURES (
@@ -184,7 +185,7 @@ CREATE INDEX idx_vehicles_make_model ON VEHICLES(make_id, model_id);
 CREATE INDEX idx_vehicles_status ON VEHICLES(status);
 CREATE INDEX idx_vehicles_price ON VEHICLES(price);
 CREATE INDEX idx_vehicles_year ON VEHICLES(year);
-CREATE INDEX idx_vehicle_images_primary ON VEHICLE_IMAGES(vehicle_id, is_primary) WHERE is_primary = TRUE; 
+CREATE INDEX idx_vehicle_images_primary ON VEHICLE_IMAGES(vehicle_id, is_primary) WHERE is_primary = TRUE;
 
 -- Test Drives and Service Appointments
 CREATE TABLE TEST_DRIVE_APPOINTMENTS (
@@ -300,7 +301,7 @@ CREATE INDEX idx_test_drive_appointments_date ON TEST_DRIVE_APPOINTMENTS(appoint
 CREATE INDEX idx_service_appointments_user ON SERVICE_APPOINTMENTS(user_id);
 CREATE INDEX idx_service_appointments_vehicle ON SERVICE_APPOINTMENTS(vehicle_id);
 CREATE INDEX idx_service_appointments_date ON SERVICE_APPOINTMENTS(appointment_date, appointment_time);
-CREATE INDEX idx_service_history_vehicle ON SERVICE_HISTORY(vehicle_id); 
+CREATE INDEX idx_service_history_vehicle ON SERVICE_HISTORY(vehicle_id);
 
 -- Vehicle Sales and Auctions
 DROP TABLE IF EXISTS VEHICLE_SALES;
@@ -361,6 +362,8 @@ CREATE TABLE PAYMENTS (
     refund_amount DECIMAL(10, 2) DEFAULT 0 CHECK (refund_amount >= 0),
     refund_status payment_status,
     notes TEXT,
+    is_manual BOOLEAN DEFAULT FALSE,
+    type VARCHAR(50) DEFAULT 'service',
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CHECK (
@@ -397,111 +400,12 @@ CREATE INDEX idx_auction_vehicles_status ON AUCTION_VEHICLES(status);
 CREATE INDEX idx_payments_user ON PAYMENTS(user_id);
 CREATE INDEX idx_payments_status ON PAYMENTS(status);
 CREATE INDEX idx_payments_created ON PAYMENTS(created_at);
+CREATE INDEX IF NOT EXISTS idx_payments_is_manual ON PAYMENTS(is_manual);
+CREATE INDEX IF NOT EXISTS idx_payments_type ON PAYMENTS(type);
 CREATE INDEX idx_documents_user ON DOCUMENTS(user_id);
-CREATE INDEX idx_documents_vehicle ON DOCUMENTS(vehicle_id); 
+CREATE INDEX idx_documents_vehicle ON DOCUMENTS(vehicle_id);
 
--- Dashboard and Analytics
-CREATE TABLE DASHBOARD_METRICS (
-    metric_date DATE NOT NULL DEFAULT CURRENT_DATE,
-    total_revenue DECIMAL(12, 2) NOT NULL DEFAULT 0,
-    cars_sold INTEGER NOT NULL DEFAULT 0,
-    new_customers INTEGER NOT NULL DEFAULT 0,
-    appointments_scheduled INTEGER NOT NULL DEFAULT 0,
-    test_drives INTEGER NOT NULL DEFAULT 0,
-    service_appointments INTEGER NOT NULL DEFAULT 0,
-    PRIMARY KEY (metric_date)
-);
-
-CREATE TABLE INVENTORY_METRICS (
-    metric_date DATE NOT NULL DEFAULT CURRENT_DATE,
-    category VARCHAR(20) NOT NULL,
-    available_count INTEGER NOT NULL DEFAULT 0,
-    sold_count INTEGER NOT NULL DEFAULT 0,
-    PRIMARY KEY (metric_date, category)
-);
-
-CREATE TABLE SALES_CHART_DATA (
-    period_date DATE NOT NULL,
-    period_type VARCHAR(10) NOT NULL, -- 'daily', 'weekly', 'monthly'
-    sales_amount DECIMAL(12, 2) NOT NULL DEFAULT 0,
-    units_sold INTEGER NOT NULL DEFAULT 0,
-    PRIMARY KEY (period_date, period_type)
-);
-
-CREATE TABLE DASHBOARD_ALERTS (
-    alert_id SERIAL PRIMARY KEY,
-    type VARCHAR(20) NOT NULL, -- 'inventory', 'task', 'appointment'
-    priority VARCHAR(10) NOT NULL, -- 'low', 'medium', 'high', 'critical'
-    title VARCHAR(100) NOT NULL,
-    message TEXT NOT NULL,
-    is_resolved BOOLEAN NOT NULL DEFAULT FALSE,
-    resolved_at TIMESTAMPTZ,
-    resolved_by INTEGER REFERENCES USERS(user_id) ON DELETE SET NULL,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
-
--- Create indexes
-CREATE INDEX idx_dashboard_alerts_priority ON DASHBOARD_ALERTS(priority, is_resolved);
-CREATE INDEX idx_dashboard_alerts_type ON DASHBOARD_ALERTS(type, is_resolved); 
-
--- Create user_wishlist table
-CREATE TABLE IF NOT EXISTS user_wishlist (
-    wishlist_id SERIAL PRIMARY KEY,
-    user_id INTEGER NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
-    vehicle_id INTEGER NOT NULL REFERENCES vehicles(vehicle_id) ON DELETE CASCADE,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE(user_id, vehicle_id)
-);
-
--- Create index for faster lookups
-CREATE INDEX IF NOT EXISTS idx_user_wishlist_user_id ON user_wishlist(user_id);
-CREATE INDEX IF NOT EXISTS idx_user_wishlist_vehicle_id ON user_wishlist(vehicle_id); 
-
--- Add new columns for enhanced authentication
-ALTER TABLE users
-    ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT true,
-    ADD COLUMN IF NOT EXISTS token_version INTEGER DEFAULT 0,
-    ADD COLUMN IF NOT EXISTS last_login TIMESTAMP WITH TIME ZONE;
-
--- Rename password_hash column to password for consistency
-ALTER TABLE users 
-    RENAME COLUMN password_hash TO password;
-
--- Add indexes for commonly queried fields
-CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
-CREATE INDEX IF NOT EXISTS idx_users_role ON users(role);
-CREATE INDEX IF NOT EXISTS idx_users_is_active ON users(is_active);
-
--- Add constraints
-ALTER TABLE users
-    ALTER COLUMN email SET NOT NULL,
-    ALTER COLUMN password SET NOT NULL,
-    ALTER COLUMN role SET NOT NULL,
-    ALTER COLUMN is_active SET NOT NULL,
-    ALTER COLUMN token_version SET NOT NULL;
-
--- Add email verification fields to users table
-ALTER TABLE users
-    ADD COLUMN IF NOT EXISTS verification_token VARCHAR(64),
-    ADD COLUMN IF NOT EXISTS verification_token_created_at TIMESTAMPTZ,
-    ADD COLUMN IF NOT EXISTS email_verified BOOLEAN DEFAULT FALSE;
-
--- Add unique constraint on email if not exists
-DO $$ 
-BEGIN 
-    IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint 
-        WHERE conname = 'users_email_unique'
-    ) THEN
-        ALTER TABLE users
-            ADD CONSTRAINT users_email_unique UNIQUE (email);
-    END IF;
-END $$; 
-
--- ===== 004_business_settings.sql =====
--- (Business settings table and triggers)
-
--- Create business settings table
+-- Business Settings Table
 CREATE TABLE BUSINESS_SETTINGS (
     setting_id SERIAL PRIMARY KEY,
     business_name VARCHAR(100) NOT NULL DEFAULT 'Saam Cars LLC',
@@ -563,38 +467,61 @@ $$ language 'plpgsql';
 CREATE TRIGGER update_business_settings_timestamp
     BEFORE UPDATE ON BUSINESS_SETTINGS
     FOR EACH ROW
-    EXECUTE FUNCTION update_business_settings_timestamp(); 
+    EXECUTE FUNCTION update_business_settings_timestamp();
 
--- ===== 004_email_verification.sql =====
--- (Email verification fields for users)
--- (Already included above, but kept for completeness)
-ALTER TABLE users
-ADD COLUMN IF NOT EXISTS verification_token VARCHAR(64),
-ADD COLUMN IF NOT EXISTS verification_token_created_at TIMESTAMPTZ,
-ADD COLUMN IF NOT EXISTS email_verified BOOLEAN DEFAULT FALSE; 
+-- Dashboard and Analytics
+CREATE TABLE DASHBOARD_METRICS (
+    metric_date DATE NOT NULL DEFAULT CURRENT_DATE,
+    total_revenue DECIMAL(12, 2) NOT NULL DEFAULT 0,
+    cars_sold INTEGER NOT NULL DEFAULT 0,
+    new_customers INTEGER NOT NULL DEFAULT 0,
+    appointments_scheduled INTEGER NOT NULL DEFAULT 0,
+    test_drives INTEGER NOT NULL DEFAULT 0,
+    service_appointments INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (metric_date)
+);
 
--- ===== 005_add_is_manual_to_payments.sql =====
--- (Add is_manual column to payments)
-ALTER TABLE PAYMENTS 
-ADD COLUMN IF NOT EXISTS is_manual BOOLEAN DEFAULT FALSE;
+CREATE TABLE INVENTORY_METRICS (
+    metric_date DATE NOT NULL DEFAULT CURRENT_DATE,
+    category VARCHAR(20) NOT NULL,
+    available_count INTEGER NOT NULL DEFAULT 0,
+    sold_count INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (metric_date, category)
+);
 
--- Add index for is_manual column
-CREATE INDEX IF NOT EXISTS idx_payments_is_manual ON PAYMENTS(is_manual); 
+CREATE TABLE SALES_CHART_DATA (
+    period_date DATE NOT NULL,
+    period_type VARCHAR(10) NOT NULL, -- 'daily', 'weekly', 'monthly'
+    sales_amount DECIMAL(12, 2) NOT NULL DEFAULT 0,
+    units_sold INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (period_date, period_type)
+);
 
--- ===== 005_add_payment_type.sql =====
--- (Add type column to payments and update data)
-ALTER TABLE PAYMENTS 
-ADD COLUMN IF NOT EXISTS type VARCHAR(50) DEFAULT 'service';
+CREATE TABLE DASHBOARD_ALERTS (
+    alert_id SERIAL PRIMARY KEY,
+    type VARCHAR(20) NOT NULL, -- 'inventory', 'task', 'appointment'
+    priority VARCHAR(10) NOT NULL, -- 'low', 'medium', 'high', 'critical'
+    title VARCHAR(100) NOT NULL,
+    message TEXT NOT NULL,
+    is_resolved BOOLEAN NOT NULL DEFAULT FALSE,
+    resolved_at TIMESTAMPTZ,
+    resolved_by INTEGER REFERENCES USERS(user_id) ON DELETE SET NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
 
--- Update existing payments to have appropriate types based on description and vehicle_id
-UPDATE PAYMENTS 
-SET type = CASE 
-    WHEN description ILIKE '%hold%' THEN 'vehicle_hold'
-    WHEN vehicle_id IS NOT NULL AND description NOT ILIKE '%hold%' THEN 'vehicle_purchase'
-    WHEN description ILIKE '%service%' THEN 'service'
-    ELSE 'service'
-END
-WHERE type = 'service';
+-- Create indexes
+CREATE INDEX idx_dashboard_alerts_priority ON DASHBOARD_ALERTS(priority, is_resolved);
+CREATE INDEX idx_dashboard_alerts_type ON DASHBOARD_ALERTS(type, is_resolved);
 
--- Add index for payment type
-CREATE INDEX IF NOT EXISTS idx_payments_type ON PAYMENTS(type); 
+-- Create user_wishlist table
+CREATE TABLE IF NOT EXISTS user_wishlist (
+    wishlist_id SERIAL PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+    vehicle_id INTEGER NOT NULL REFERENCES vehicles(vehicle_id) ON DELETE CASCADE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(user_id, vehicle_id)
+);
+
+-- Create index for faster lookups
+CREATE INDEX IF NOT EXISTS idx_user_wishlist_user_id ON user_wishlist(user_id);
+CREATE INDEX IF NOT EXISTS idx_user_wishlist_vehicle_id ON user_wishlist(vehicle_id); 

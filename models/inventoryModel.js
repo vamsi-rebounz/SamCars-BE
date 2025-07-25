@@ -37,6 +37,13 @@ class InventoryModel {
                 location,
                 stock_number,
                 engine,
+                is_bought_in_auction = false,
+                seller_name = null,
+                seller_email = null,
+                seller_phone = null,
+                bought_price = null,
+                repair_costs = null,
+                sold_price = null,
             } = vehicleData;
     
             // 1. First check if make exists, if not create it
@@ -78,13 +85,16 @@ class InventoryModel {
                 `INSERT INTO VEHICLES (
                     make_id, model_id, year, price, mileage, vin,
                     exterior_color, interior_color, transmission,
-                    body_type, description, condition, status, carfax_link, fuel_type, location, stock_number, engine
-                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
+                    body_type, description, condition, status, carfax_link, fuel_type, location, stock_number, engine,
+                    is_bought_in_auction, seller_name, seller_email, seller_phone, bought_price, repair_costs, sold_price
+                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18,
+                   $19, $20, $21, $22, $23, $24, $25, $26)
                 RETURNING vehicle_id`,
                 [
                     make_id, model_id, year, price, mileage, vin,
                     exterior_color, interior_color, transmission,
-                    body_type, description, condition, status, carfax_link, fuel_type, location, stock_number, engine
+                    body_type, description, condition, status, carfax_link, fuel_type, location, stock_number, engine,
+                    is_bought_in_auction, seller_name, seller_email, seller_phone, bought_price, repair_costs, sold_price
                 ]
             );
     
@@ -259,7 +269,14 @@ class InventoryModel {
                 carfax_link,
                 created_at,
                 updated_at,
-                stock_number
+                stock_number,
+                is_bought_in_auction,
+                seller_name,
+                seller_email,
+                seller_phone,
+                bought_price,
+                repair_costs,
+                sold_price,
             } = vehicleData;
 
 
@@ -350,6 +367,13 @@ class InventoryModel {
             addUpdateField('vin', vin);
             addUpdateField('condition', condition);
             addUpdateField('is_featured', is_featured);
+            addUpdateField('is_bought_in_auction', vehicleData.is_bought_in_auction);
+            addUpdateField('seller_name', vehicleData.seller_name);
+            addUpdateField('seller_email', vehicleData.seller_email);
+            addUpdateField('seller_phone', vehicleData.seller_phone);
+            addUpdateField('bought_price', vehicleData.bought_price);
+            addUpdateField('repair_costs', vehicleData.repair_costs);
+            addUpdateField('sold_price', vehicleData.sold_price);
             // Remove status from here as we'll handle it separately
             addUpdateField('description', description);
             addUpdateField('carfax_link', carfax_link);
@@ -613,7 +637,7 @@ class InventoryModel {
      * @param {Function} buildWhereClauseForInventory - Helper function to build WHERE clause.
      * @returns {Promise<object>} Inventory data, pagination info, and filter statistics.
      */
-    static async getInventory({ category, limit, page, search, sortBy, sortOrder, status }, buildWhereClauseForInventory) {
+    static async getInventory({ category, limit, page, search, sortBy, sortOrder, status, auction }, buildWhereClauseForInventory) {
         const parsedLimit = parseInt(limit);
         const parsedPage = parseInt(page);
         const offset = (parsedPage - 1) * parsedLimit;
@@ -632,7 +656,7 @@ class InventoryModel {
     
         const orderByClause = `${allowedSortFields[sortBy]} ${sortOrder.toUpperCase()}`;
     
-        const { whereClause, values, paramIndex } = buildWhereClauseForInventory({ search, status, category });
+        const { whereClause, values, paramIndex } = buildWhereClauseForInventory({ search, status, category, auction });
     
         const vehicleQuery = `
             SELECT
@@ -675,7 +699,14 @@ class InventoryModel {
                     FROM VEHICLE_FEATURE_MAPPING vfm
                     JOIN VEHICLE_FEATURES vf ON vfm.feature_id = vf.feature_id
                     WHERE vfm.vehicle_id = v.vehicle_id
-                ) AS features
+                ) AS features,
+                v.is_bought_in_auction,
+                v.seller_name,
+                v.seller_email,
+                v.seller_phone,
+                v.bought_price,
+                v.repair_costs,
+                v.sold_price
             FROM VEHICLES v
             JOIN VEHICLE_MAKES vm ON v.make_id = vm.make_id
             JOIN VEHICLE_MODELS vmod ON v.model_id = vmod.model_id

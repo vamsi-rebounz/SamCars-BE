@@ -29,7 +29,7 @@ router.put(
 // Fetch vehicles with filters
 router.get(
     '/',
-    // authenticateToken,
+    authenticateToken,
     // isAdmin,
     InventoryController.getInventory
 );
@@ -37,8 +37,8 @@ router.get(
 // Delete vehicle from inventory
 router.delete(
     '/vehicles/delete/:id',
-    // authenticateToken,
-    // isAdmin,
+    authenticateToken,
+    isAdmin,
     InventoryController.deleteVehicle
 );
 module.exports = router; 

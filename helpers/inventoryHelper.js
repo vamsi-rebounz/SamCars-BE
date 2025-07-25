@@ -17,7 +17,9 @@ const buildWhereClauseForInventory = (queryParams) => {
       paramIndex++;
     }
   
-    if (queryParams.status && queryParams.status !== 'all') {
+    // Only allow allowed status values
+    const allowedStatuses = ['available', 'sold', 'under_maintenance', 'under_inspection', 'reserved'];
+    if (queryParams.status && queryParams.status !== 'all' && allowedStatuses.includes(queryParams.status)) {
       conditions.push(`v.status = $${paramIndex}`);
       values.push(queryParams.status);
       paramIndex++;
@@ -36,7 +38,12 @@ const buildWhereClauseForInventory = (queryParams) => {
           paramIndex++;
       }
     }
-  
+
+    if (queryParams.auction) {
+      // Show only auction vehicles
+      conditions.push('(v.is_bought_in_auction = TRUE OR EXISTS (SELECT 1 FROM auction_vehicles av WHERE av.vehicle_id = v.vehicle_id))');
+    }
+
     const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
     return { whereClause, values, paramIndex };
   };
