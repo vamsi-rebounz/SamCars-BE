@@ -254,6 +254,7 @@ class InventoryController {
                 return res.status(400).json({ status: 'error', message: `Invalid status filter. Allowed: ${allowedStatuses.join(', ')}` });
             }
 
+            const isAdmin = req.user && req.user.role === 'admin';
             const inventoryData = await InventoryModel.getInventory({
                 category,
                 limit,
@@ -262,7 +263,8 @@ class InventoryController {
                 sortBy: sort_by,
                 sortOrder: sort_order,
                 status: statusFilter,
-                auction: auction === 'true' || auction === true
+                auction: auction === 'true' || auction === true,
+                includePurchaseDetails: isAdmin
             }, buildWhereClauseForInventory); // Pass the helper function
 
             res.status(200).json({

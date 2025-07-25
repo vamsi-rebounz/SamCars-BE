@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const InventoryController = require('../controllers/inventoryController');
-const { authenticateToken, isAdmin } = require('../middleware/authMiddleware');
+const { authenticateToken, isAdmin, tryAuthenticateToken } = require('../middleware/authMiddleware');
 const { upload, handleMulterError } = require('../middleware/multerMiddleware');
 
 // * Admin authorized routes *
@@ -29,7 +29,7 @@ router.put(
 // Fetch vehicles with filters
 router.get(
     '/',
-    // authenticateToken,
+    tryAuthenticateToken,
     // isAdmin,
     InventoryController.getInventory
 );

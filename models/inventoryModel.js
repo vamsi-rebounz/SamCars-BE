@@ -775,8 +775,37 @@ class InventoryModel {
             const totalItems = parseInt(countResult.rows[0].count);
             const totalPages = Math.ceil(totalItems / parsedLimit);
 
+            const { includePurchaseDetails } = arguments[0];
+            const vehicles = vehiclesResult.rows.map(vehicle => {
+                // Ensure enum fields are returned as strings (if not already)
+                const normalizeEnum = (val) => (val && typeof val === 'string' ? val : (val ? val.toString() : val));
+                const normalized = {
+                    ...vehicle,
+                    status: normalizeEnum(vehicle.status),
+                    condition: normalizeEnum(vehicle.condition),
+                    fuel_type: normalizeEnum(vehicle.fuel_type),
+                    transmission: normalizeEnum(vehicle.transmission),
+                    body_type: normalizeEnum(vehicle.body_type)
+                };
+                if (includePurchaseDetails) {
+                    return normalized;
+                } else {
+                    // Omit purchase/seller details for non-admins
+                    const {
+                        is_bought_in_auction,
+                        seller_name,
+                        seller_email,
+                        seller_phone,
+                        bought_price,
+                        repair_costs,
+                        sold_price,
+                        ...rest
+                    } = normalized;
+                    return rest;
+                }
+            });
             return {
-                vehicles: vehiclesResult.rows,
+                vehicles,
                 pagination: {
                     current_page: parsedPage,
                     total_pages: totalPages,
