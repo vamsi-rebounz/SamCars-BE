@@ -18,42 +18,22 @@ class DashboardController {
         // Simple test query first
         const testQuery = 'SELECT COUNT(*) as count FROM vehicles';
         const testResult = await client.query(testQuery);
-        console.log('Test query result:', testResult.rows[0]);
 
         // Get date range from query params or use defaults
         const { start_date, end_date } = req.query;
         const dateFrom = start_date || new Date(new Date().setMonth(new Date().getMonth() - 1)).toISOString().split('T')[0];
         const dateTo = end_date || new Date().toISOString().split('T')[0];
 
-        console.log('Fetching dashboard stats for date range:', dateFrom, 'to', dateTo);
-
         // Execute queries one by one to debug
         const vehicleStats = await DashboardController.getVehicleStats(client, dateFrom, dateTo);
-        console.log('Vehicle stats:', vehicleStats);
-        
         const userStats = await DashboardController.getUserStats(client, dateFrom, dateTo);
-        console.log('User stats:', userStats);
-        
         const paymentStats = await DashboardController.getPaymentStats(client, dateFrom, dateTo);
-        console.log('Payment stats:', paymentStats);
-        
         const auctionStats = await DashboardController.getAuctionStats(client, dateFrom, dateTo);
-        console.log('Auction stats:', auctionStats);
-        
         const appointmentStats = await DashboardController.getAppointmentStats(client, dateFrom, dateTo);
-        console.log('Appointment stats:', appointmentStats);
-        
         const recentActivity = await DashboardController.getRecentActivity(client);
-        console.log('Recent activity count:', recentActivity.length);
-        
         const inventoryBreakdown = await DashboardController.getInventoryBreakdown(client);
-        console.log('Inventory breakdown count:', inventoryBreakdown.length);
-        
         const salesChartData = await DashboardController.getSalesChartData(client, dateFrom, dateTo);
-        console.log('Sales chart count:', salesChartData.length);
-        
         const alerts = await DashboardController.getAlerts(client);
-        console.log('Alerts count:', alerts.length);
 
         const dashboardData = {
           summary: {

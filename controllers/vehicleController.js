@@ -20,7 +20,7 @@ class VehicleController {
 
             // Check if user is admin
             const isAdmin = req.user && req.user.role === 'admin';
-            
+            console.log("isAdmin: "+isAdmin);
             // Delegate data fetching to the VehicleModel
             const vehicleData = await VehicleModel.getVehicleById(parseInt(id), { includePurchaseDetails: isAdmin });
 

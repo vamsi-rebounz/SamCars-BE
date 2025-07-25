@@ -134,6 +134,10 @@ class InventoryController {
                 if (req.body.seller_name) vehicleData.seller_name = req.body.seller_name;
                 if (req.body.seller_email) vehicleData.seller_email = req.body.seller_email;
                 if (req.body.seller_phone) vehicleData.seller_phone = req.body.seller_phone;
+                if (req.body.bought_price) vehicleData.bought_price = parseFloat(req.body.bought_price);
+                if (req.body.repair_costs) vehicleData.repair_costs = parseFloat(req.body.repair_costs);
+                if (req.body.sold_price) vehicleData.sold_price = parseFloat(req.body.sold_price);
+                
                 // Handle features and tags
                 if (req.body.features) {
                     vehicleData.features = typeof req.body.features === 'string' ? 

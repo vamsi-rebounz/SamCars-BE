@@ -88,7 +88,7 @@ class InventoryModel {
                     body_type, description, condition, status, carfax_link, fuel_type, location, stock_number, engine,
                     is_bought_in_auction, seller_name, seller_email, seller_phone, bought_price, repair_costs, sold_price
                 ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18,
-                   $19, $20, $21, $22, $23, $24, $25, $26)
+                   $19, $20, $21, $22, $23, $24, $25)
                 RETURNING vehicle_id`,
                 [
                     make_id, model_id, year, price, mileage, vin,
