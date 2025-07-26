@@ -39,9 +39,15 @@ const buildWhereClauseForInventory = (queryParams) => {
       }
     }
 
-    if (queryParams.auction) {
-      // Show only auction vehicles
-      conditions.push('(v.is_bought_in_auction = TRUE OR EXISTS (SELECT 1 FROM auction_vehicles av WHERE av.vehicle_id = v.vehicle_id))');
+    if (queryParams.auction !== null && queryParams.auction !== undefined) {
+      if (queryParams.auction === true) {
+        // Show only auction vehicles
+        conditions.push('(v.is_bought_in_auction = TRUE OR EXISTS (SELECT 1 FROM auction_vehicles av WHERE av.vehicle_id = v.vehicle_id))');
+      } else if (queryParams.auction === false) {
+        // Show only individual vehicles (not from auction)
+        conditions.push('(v.is_bought_in_auction = FALSE OR v.is_bought_in_auction IS NULL)');
+        conditions.push('NOT EXISTS (SELECT 1 FROM auction_vehicles av WHERE av.vehicle_id = v.vehicle_id)');
+      }
     }
 
     const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';

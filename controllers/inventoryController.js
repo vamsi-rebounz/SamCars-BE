@@ -244,7 +244,7 @@ class InventoryController {
                 sort_by = 'date_added',
                 sort_order = 'desc',
                 status = 'all',
-                auction = 'false'
+                purchase_type = 'all'
             } = req.query;
 
             // Only allow status values that match the DB enum
@@ -252,6 +252,14 @@ class InventoryController {
             let statusFilter = status;
             if (status !== 'all' && !allowedStatuses.includes(status)) {
                 return res.status(400).json({ status: 'error', message: `Invalid status filter. Allowed: ${allowedStatuses.join(', ')}` });
+            }
+
+            // Handle purchase type filtering
+            let auctionFilter = null;
+            if (purchase_type === 'auction') {
+                auctionFilter = true;
+            } else if (purchase_type === 'individual') {
+                auctionFilter = false;
             }
 
             const isAdmin = req.user && req.user.role === 'admin';
@@ -263,7 +271,7 @@ class InventoryController {
                 sortBy: sort_by,
                 sortOrder: sort_order,
                 status: statusFilter,
-                auction: auction === 'true' || auction === true,
+                auction: auctionFilter,
                 includePurchaseDetails: isAdmin
             }, buildWhereClauseForInventory); // Pass the helper function
 
