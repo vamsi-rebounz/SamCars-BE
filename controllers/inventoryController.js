@@ -254,6 +254,15 @@ class InventoryController {
                 return res.status(400).json({ status: 'error', message: `Invalid status filter. Allowed: ${allowedStatuses.join(', ')}` });
             }
 
+            // Check if user is admin for purchase_type filter
+            const isAdmin = req.user && req.user.role === 'admin';
+            if (purchase_type !== 'all' && !isAdmin) {
+                return res.status(403).json({ 
+                    status: 'error', 
+                    message: 'Purchase type filter is only available for admin users' 
+                });
+            }
+
             // Handle purchase type filtering
             let auctionFilter = null;
             if (purchase_type === 'auction') {
@@ -262,7 +271,6 @@ class InventoryController {
                 auctionFilter = false;
             }
 
-            const isAdmin = req.user && req.user.role === 'admin';
             const inventoryData = await InventoryModel.getInventory({
                 category,
                 limit,
