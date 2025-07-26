@@ -244,7 +244,17 @@ class InventoryController {
                 sort_by = 'date_added',
                 sort_order = 'desc',
                 status = 'all',
-                purchase_type = 'all'
+                purchase_type = 'all',
+                min_price,
+                max_price,
+                min_purchase_cost,
+                max_purchase_cost,
+                min_additional_costs,
+                max_additional_costs,
+                min_sold_price,
+                max_sold_price,
+                min_profit,
+                max_profit
             } = req.query;
 
             // Only allow status values that match the DB enum
@@ -254,8 +264,31 @@ class InventoryController {
                 return res.status(400).json({ status: 'error', message: `Invalid status filter. Allowed: ${allowedStatuses.join(', ')}` });
             }
 
-            // Check if user is admin for purchase_type filter
+            // Check if user is admin for financial filters and sorting
             const isAdmin = req.user && req.user.role === 'admin';
+            
+            // Define financial fields that require admin access
+            const financialFields = ['bought_price', 'repair_costs', 'sold_price', 'profit'];
+            const financialFilters = ['min_purchase_cost', 'max_purchase_cost', 'min_additional_costs', 'max_additional_costs', 'min_sold_price', 'max_sold_price', 'min_profit', 'max_profit'];
+            
+            // Check if non-admin user is trying to sort by financial fields
+            if (financialFields.includes(sort_by) && !isAdmin) {
+                return res.status(403).json({ 
+                    status: 'error', 
+                    message: 'Financial field sorting is only available for admin users' 
+                });
+            }
+            
+            // Check if non-admin user is trying to use financial filters
+            const hasFinancialFilters = financialFilters.some(filter => req.query[filter] !== undefined);
+            if (hasFinancialFilters && !isAdmin) {
+                return res.status(403).json({ 
+                    status: 'error', 
+                    message: 'Financial filters are only available for admin users' 
+                });
+            }
+            
+            // Check if user is admin for purchase_type filter
             if (purchase_type !== 'all' && !isAdmin) {
                 return res.status(403).json({ 
                     status: 'error', 
@@ -280,7 +313,18 @@ class InventoryController {
                 sortOrder: sort_order,
                 status: statusFilter,
                 auction: auctionFilter,
-                includePurchaseDetails: isAdmin
+                includePurchaseDetails: isAdmin,
+                isAdmin: isAdmin, // Pass admin status to model
+                min_price,
+                max_price,
+                min_purchase_cost,
+                max_purchase_cost,
+                min_additional_costs,
+                max_additional_costs,
+                min_sold_price,
+                max_sold_price,
+                min_profit,
+                max_profit
             }, buildWhereClauseForInventory); // Pass the helper function
 
             res.status(200).json({

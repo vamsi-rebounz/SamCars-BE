@@ -637,7 +637,7 @@ class InventoryModel {
      * @param {Function} buildWhereClauseForInventory - Helper function to build WHERE clause.
      * @returns {Promise<object>} Inventory data, pagination info, and filter statistics.
      */
-    static async getInventory({ category, limit, page, search, sortBy, sortOrder, status, auction }, buildWhereClauseForInventory) {
+    static async getInventory({ category, limit, page, search, sortBy, sortOrder, status, auction, min_price, max_price, min_purchase_cost, max_purchase_cost, min_additional_costs, max_additional_costs, min_sold_price, max_sold_price, min_profit, max_profit, isAdmin }, buildWhereClauseForInventory) {
         const parsedLimit = parseInt(limit);
         const parsedPage = parseInt(page);
         const offset = (parsedPage - 1) * parsedLimit;
@@ -647,7 +647,13 @@ class InventoryModel {
             price: 'v.price',
             year: 'v.year',
             mileage: 'v.mileage',
-            make: 'vm.name'
+            make: 'vm.name',
+            ...(isAdmin && {
+                bought_price: 'v.bought_price',
+                repair_costs: 'v.repair_costs',
+                sold_price: 'v.sold_price',
+                profit: '(COALESCE(v.sold_price, 0) - COALESCE(v.bought_price, 0) - COALESCE(v.repair_costs, 0))'
+            })
         };
     
         if (!(sortBy in allowedSortFields)) {
@@ -656,7 +662,22 @@ class InventoryModel {
     
         const orderByClause = `${allowedSortFields[sortBy]} ${sortOrder.toUpperCase()}`;
     
-        const { whereClause, values, paramIndex } = buildWhereClauseForInventory({ search, status, category, auction });
+        const { whereClause, values, paramIndex } = buildWhereClauseForInventory({ 
+            search, 
+            status, 
+            category, 
+            auction,
+            min_price,
+            max_price,
+            min_purchase_cost,
+            max_purchase_cost,
+            min_additional_costs,
+            max_additional_costs,
+            min_sold_price,
+            max_sold_price,
+            min_profit,
+            max_profit
+        });
     
         const vehicleQuery = `
             SELECT
@@ -701,12 +722,19 @@ class InventoryModel {
                     WHERE vfm.vehicle_id = v.vehicle_id
                 ) AS features,
                 v.is_bought_in_auction,
+                ${isAdmin ? `
                 v.seller_name,
                 v.seller_email,
                 v.seller_phone,
                 v.bought_price,
                 v.repair_costs,
-                v.sold_price
+                v.sold_price` : `
+                NULL as seller_name,
+                NULL as seller_email,
+                NULL as seller_phone,
+                NULL as bought_price,
+                NULL as repair_costs,
+                NULL as sold_price`}
             FROM VEHICLES v
             JOIN VEHICLE_MAKES vm ON v.make_id = vm.make_id
             JOIN VEHICLE_MODELS vmod ON v.model_id = vmod.model_id
