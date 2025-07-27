@@ -1,7 +1,7 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
- 
+
 // Import routes
 const userRoutes = require('./routes/userRoutes');
 const inventoryRoutes = require('./routes/inventoryRoutes');
@@ -15,14 +15,14 @@ const dashboardRoutes = require('./routes/dashboardRoutes');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
- 
-// CORS should come before routes
 
 const isProduction = process.env.NODE_ENV === 'production';
+
 let allowedOrigins = [];
-if(isProduction) {
+if (isProduction) {
   allowedOrigins = [
     "https://www.saamcars.com",
+    "https://saam-cars-7k2w7fhhq-saam-cars-llc.vercel.app", // add your vercel frontend URL here
   ];
 } else {
   allowedOrigins = [
@@ -30,25 +30,36 @@ if(isProduction) {
   ];
 }
 
-app.use(cors({
-  origin: allowedOrigins,
+const corsOptions = {
+  origin: function (origin, callback) {
+    // Allow requests with no origin (like curl or Postman)
+    if (!origin) return callback(null, true);
+
+    if (allowedOrigins.indexOf(origin) !== -1) {
+      callback(null, true);
+    } else {
+      callback(new Error('CORS policy: This origin is not allowed'));
+    }
+  },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
-  exposedHeaders: ['Content-Range', 'X-Total-Count']
-}));
+  exposedHeaders: ['Content-Range', 'X-Total-Count'],
+};
+
+app.use(cors(corsOptions));
 
 // Special route for Stripe webhook that needs raw body
 app.use('/api/payments/webhook', express.raw({ type: 'application/json' }));
- 
+
 // Global middleware for parsing JSON and URL-encoded bodies
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
- 
+
 // Mount routes
-app.use('/api/auth', authRoutes); // Mount auth routes first
+app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
-app.use('/api/inventory', inventoryRoutes); // Use multer middleware in routes
+app.use('/api/inventory', inventoryRoutes);
 app.use('/api/vehicles', vehicleRoutes);
 app.use('/api/auction-tracker', auctionRoutes);
 app.use('/api/sales', vehicleSalesRoutes);
@@ -60,39 +71,36 @@ app.use('/api/dashboard', dashboardRoutes);
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', message: 'Server is running' });
 });
- 
+
 app.get('/', (req, res) => {
   res.json({ message: 'SamCars API is running!' });
 });
- 
+
 // Error handling middleware
 app.use((err, req, res, next) => {
   console.error('Error:', err);
-  
-  // Handle specific error types
+
   if (err.name === 'ValidationError') {
-    return res.status(400).json({ 
+    return res.status(400).json({
       status: 'error',
-      message: err.message 
+      message: err.message
     });
   }
-  
+
   if (err.name === 'UnauthorizedError') {
-    return res.status(401).json({ 
+    return res.status(401).json({
       status: 'error',
-      message: 'Invalid token or not authenticated' 
+      message: 'Invalid token or not authenticated'
     });
   }
-  
-  // Default error
-  res.status(500).json({ 
+
+  res.status(500).json({
     status: 'error',
     message: 'Internal server error',
     ...(process.env.NODE_ENV === 'development' && { error: err.message })
   });
 });
- 
+
 app.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
 });
- 

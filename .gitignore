@@ -2,3 +2,4 @@
 config/serviceAccountKey.json
 config/serviceAccountKey-Vamsi.json
 scripts/
+node_modules/

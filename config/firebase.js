@@ -2,8 +2,18 @@ const { initializeApp } = require('firebase/app');
 const { getStorage } = require('firebase/storage');
 const admin = require('firebase-admin');
 
-// const serviceAccount = require('./serviceAccountKey.json');
-const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_KEY);
+// Parse Firebase service account key with error handling
+let serviceAccount;
+try {
+    if (!process.env.FIREBASE_SERVICE_ACCOUNT_KEY) {
+        throw new Error('FIREBASE_SERVICE_ACCOUNT_KEY environment variable is not set');
+    }
+    serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_KEY);
+} catch (error) {
+    console.error('Error parsing Firebase service account key:', error.message);
+    console.error('Please ensure FIREBASE_SERVICE_ACCOUNT_KEY is properly set in your environment variables');
+    process.exit(1);
+}
 
 // Firebase config for client SDK
 const firebaseConfig = {
