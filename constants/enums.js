@@ -28,10 +28,9 @@ const PAYMENT_STATUSES = {
 const VEHICLE_STATUSES = {
     AVAILABLE: 'available',
     SOLD: 'sold',
-    PENDING: 'pending',
-    MAINTENANCE: 'maintenance',
-    RESERVED: 'reserved',
-    HOLD: 'hold'
+    UNDER_MAINTENANCE: 'under_maintenance',
+    UNDER_INSPECTION: 'under_inspection',
+    RESERVED: 'reserved'
 };
 
 // Vehicle Conditions

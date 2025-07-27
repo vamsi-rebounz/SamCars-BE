@@ -1,6 +1,7 @@
 const { validateVehicleData } = require('../validators/vehicleValidator');
 const { buildWhereClauseForInventory } = require('../helpers/inventoryHelper');
 const InventoryModel = require('../models/inventoryModel');
+const { VEHICLE_STATUSES } = require('../constants/enums');
 
 class InventoryController {
     /**
@@ -80,6 +81,34 @@ class InventoryController {
             }
 
             const vehicle_id = await InventoryModel.addVehicle(vehicleData, req.files);
+
+            // If vehicle was bought in auction, add it to auction_vehicles table
+            if (vehicleData.is_bought_in_auction && vehicleData.bought_price) {
+                try {
+                    const pool = require('../config/db');
+                    const auctionVehicleQuery = `
+                        INSERT INTO auction_vehicles (
+                            vehicle_id, purchase_date, purchase_price, additional_costs,
+                            list_price, status, created_at, updated_at
+                        ) VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW())
+                    `;
+                    
+                    const auctionValues = [
+                        vehicle_id,
+                        new Date().toISOString().split('T')[0], // Today's date
+                        vehicleData.bought_price,
+                        vehicleData.repair_costs || 0,
+                        vehicleData.price,
+                        vehicleData.status || 'available'
+                    ];
+                    
+                    await pool.query(auctionVehicleQuery, auctionValues);
+                    console.log(`Added vehicle ${vehicle_id} to auction_vehicles table`);
+                } catch (auctionError) {
+                    console.error('Error adding vehicle to auction_vehicles table:', auctionError);
+                    // Don't fail the vehicle creation if auction table update fails
+                }
+            }
 
             res.status(201).json({
                 message: 'Vehicle added successfully',
@@ -206,6 +235,71 @@ class InventoryController {
             );
             console.log('InventoryModel.updateVehicle completed successfully');
 
+            // Handle auction_vehicles table updates
+            if (vehicleData.is_bought_in_auction !== undefined) {
+                try {
+                    const pool = require('../config/db');
+                    
+                    if (vehicleData.is_bought_in_auction && vehicleData.bought_price) {
+                        // Vehicle is marked as bought in auction
+                        const checkQuery = 'SELECT auction_id FROM auction_vehicles WHERE vehicle_id = $1';
+                        const checkResult = await pool.query(checkQuery, [id]);
+                        
+                        if (checkResult.rows.length === 0) {
+                            // Vehicle not in auction_vehicles table, add it
+                            const auctionVehicleQuery = `
+                                INSERT INTO auction_vehicles (
+                                    vehicle_id, purchase_date, purchase_price, additional_costs,
+                                    list_price, status, created_at, updated_at
+                                ) VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW())
+                            `;
+                            
+                            const auctionValues = [
+                                id,
+                                new Date().toISOString().split('T')[0], // Today's date
+                                vehicleData.bought_price,
+                                vehicleData.repair_costs || 0,
+                                vehicleData.price,
+                                vehicleData.status || 'available'
+                            ];
+                            
+                            await pool.query(auctionVehicleQuery, auctionValues);
+                            console.log(`Added vehicle ${id} to auction_vehicles table during update`);
+                        } else {
+                            // Vehicle already exists, update it
+                            const updateAuctionQuery = `
+                                UPDATE auction_vehicles 
+                                SET purchase_price = $1, additional_costs = $2, list_price = $3, 
+                                    status = $4, updated_at = NOW()
+                                WHERE vehicle_id = $5
+                            `;
+                            
+                            const updateValues = [
+                                vehicleData.bought_price,
+                                vehicleData.repair_costs || 0,
+                                vehicleData.price,
+                                vehicleData.status || 'available',
+                                id
+                            ];
+                            
+                            await pool.query(updateAuctionQuery, updateValues);
+                            console.log(`Updated vehicle ${id} in auction_vehicles table`);
+                        }
+                    } else if (!vehicleData.is_bought_in_auction) {
+                        // Vehicle is marked as NOT bought in auction, remove from auction_vehicles table
+                        const deleteQuery = 'DELETE FROM auction_vehicles WHERE vehicle_id = $1';
+                        const deleteResult = await pool.query(deleteQuery, [id]);
+                        
+                        if (deleteResult.rowCount > 0) {
+                            console.log(`Removed vehicle ${id} from auction_vehicles table`);
+                        }
+                    }
+                } catch (auctionError) {
+                    console.error('Error updating auction_vehicles table:', auctionError);
+                    // Don't fail the vehicle update if auction table update fails
+                }
+            }
+
             res.status(200).json({
                 status: 'success',
                 message: 'Vehicle updated successfully',
@@ -258,7 +352,7 @@ class InventoryController {
             } = req.query;
 
             // Only allow status values that match the DB enum
-            const allowedStatuses = ['available', 'sold', 'under_maintenance', 'under_inspection', 'reserved'];
+            const allowedStatuses = Object.values(VEHICLE_STATUSES);
             let statusFilter = status;
             if (status !== 'all' && !allowedStatuses.includes(status)) {
                 return res.status(400).json({ status: 'error', message: `Invalid status filter. Allowed: ${allowedStatuses.join(', ')}` });

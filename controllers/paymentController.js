@@ -262,7 +262,7 @@ class PaymentController {
         countQuery += ` WHERE ${whereConditions.join(' AND ')}`;
       }
       
-      const countResult = await pool.query(countQuery, queryParams.slice(0, -2));
+      const countResult = await pool.query(countQuery, queryParams);
       const totalItems = parseInt(countResult.rows[0].total);
       const totalPages = Math.ceil(totalItems / limit);
 
@@ -406,7 +406,7 @@ class PaymentController {
       if (oldVehicleId && oldVehicleId !== vehicleId) {
         const resetOldVehicleQuery = `
           UPDATE vehicles 
-          SET status = 'available', updated_at = NOW() 
+          SET status = 'available', sold_price = NULL, updated_at = NOW() 
           WHERE vehicle_id = $1
         `;
         await pool.query(resetOldVehicleQuery, [oldVehicleId]);
@@ -415,6 +415,7 @@ class PaymentController {
 
       // Determine new status based on payment type and status
       let newStatus = 'available'; // default
+      let updateSoldPrice = false;
 
       if (paymentType === 'vehicle_hold' || 
           (description && description.toLowerCase().includes('hold'))) {
@@ -423,20 +424,45 @@ class PaymentController {
                  (description && description.toLowerCase().includes('purchase'))) {
         // Mark as sold if payment type is purchase (regardless of status)
         newStatus = 'sold';
+        updateSoldPrice = true;
       } else if (paymentType === 'service' || 
                  (description && description.toLowerCase().includes('service'))) {
         newStatus = 'available'; // Service payments don't change vehicle status
       }
 
-      // Update vehicle status
+      // If this is a vehicle purchase, calculate total sold price from all completed payments
+      let soldPrice = null;
+      if (updateSoldPrice) {
+        const soldPriceQuery = `
+          SELECT COALESCE(SUM(amount), 0) as total_amount 
+          FROM payments 
+          WHERE vehicle_id = $1 
+          AND status = 'completed'
+        `;
+        const soldPriceResult = await pool.query(soldPriceQuery, [vehicleId]);
+        soldPrice = parseFloat(soldPriceResult.rows[0].total_amount);
+      }
+
+      // Update vehicle status and sold price
       const updateVehicleQuery = `
         UPDATE vehicles 
-        SET status = $1, updated_at = NOW() 
-        WHERE vehicle_id = $2
+        SET status = $1, sold_price = $2, updated_at = NOW() 
+        WHERE vehicle_id = $3
       `;
-      await pool.query(updateVehicleQuery, [newStatus, vehicleId]);
+      await pool.query(updateVehicleQuery, [newStatus, soldPrice, vehicleId]);
       
-      console.log('Updated vehicle status:', { vehicleId, newStatus, paymentType, paymentStatus });
+      // If this is a vehicle purchase and the vehicle was bought in auction, update auction_vehicles table
+      if (updateSoldPrice && soldPrice > 0) {
+        const updateAuctionVehicleQuery = `
+          UPDATE auction_vehicles 
+          SET sold_price = $1, status = 'sold', updated_at = NOW() 
+          WHERE vehicle_id = $2
+        `;
+        await pool.query(updateAuctionVehicleQuery, [soldPrice, vehicleId]);
+        console.log('Updated auction vehicle sold price:', { vehicleId, soldPrice });
+      }
+      
+      console.log('Updated vehicle status:', { vehicleId, newStatus, soldPrice, paymentType, paymentStatus });
     } catch (error) {
       console.error('Error updating vehicle status:', error);
       // Don't throw error to avoid breaking payment process
@@ -868,18 +894,57 @@ class PaymentController {
       const deleteQuery = 'DELETE FROM payments WHERE payment_id = $1 RETURNING payment_id';
       const result = await pool.query(deleteQuery, [id]);
 
-      // If payment had a vehicle, reset vehicle status to available
+      // If payment had a vehicle, reset vehicle status and sold price
       if (vehicleId) {
         try {
+          // Check if there are other completed payments for this vehicle
+          const remainingPaymentsQuery = `
+            SELECT SUM(amount) as total_amount 
+            FROM payments 
+            WHERE vehicle_id = $1 
+            AND status = 'completed' 
+            AND payment_id != $2
+          `;
+          const remainingPaymentsResult = await pool.query(remainingPaymentsQuery, [vehicleId, id]);
+          const remainingAmount = remainingPaymentsResult.rows[0].total_amount || 0;
+
+          // Update vehicle status and sold price
           const resetVehicleQuery = `
             UPDATE vehicles 
-            SET status = 'available', updated_at = NOW() 
-            WHERE vehicle_id = $1
+            SET status = $1, sold_price = $2, updated_at = NOW() 
+            WHERE vehicle_id = $3
           `;
-          await pool.query(resetVehicleQuery, [vehicleId]);
-          console.log('Reset vehicle status to available after payment deletion:', vehicleId);
+          
+          const newStatus = remainingAmount > 0 ? 'sold' : 'available';
+          const newSoldPrice = remainingAmount > 0 ? remainingAmount : null;
+          
+          await pool.query(resetVehicleQuery, [newStatus, newSoldPrice, vehicleId]);
+          console.log('Updated vehicle after payment deletion:', { 
+            vehicleId, 
+            newStatus, 
+            newSoldPrice, 
+            remainingAmount 
+          });
+
+          // Also update auction_vehicles table if this vehicle was bought in auction
+          try {
+            const auctionUpdateQuery = `
+              UPDATE auction_vehicles 
+              SET sold_price = $1, status = $2, updated_at = NOW() 
+              WHERE vehicle_id = $3
+            `;
+            await pool.query(auctionUpdateQuery, [newSoldPrice, newStatus, vehicleId]);
+            console.log('Updated auction vehicle after payment deletion:', { 
+              vehicleId, 
+              newStatus, 
+              newSoldPrice 
+            });
+          } catch (auctionError) {
+            console.error('Error updating auction vehicle after payment deletion:', auctionError);
+            // Don't throw error to avoid breaking payment deletion
+          }
         } catch (vehicleError) {
-          console.error('Error resetting vehicle status after payment deletion:', vehicleError);
+          console.error('Error updating vehicle after payment deletion:', vehicleError);
           // Don't throw error to avoid breaking payment deletion
         }
       }

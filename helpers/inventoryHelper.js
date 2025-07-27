@@ -1,4 +1,5 @@
 // Helper function to build dynamic WHERE clauses
+const { VEHICLE_STATUSES } = require('../constants/enums');
 
 const buildWhereClauseForInventory = (queryParams) => {
     const conditions = [];
@@ -17,8 +18,8 @@ const buildWhereClauseForInventory = (queryParams) => {
       paramIndex++;
     }
   
-    // Only allow allowed status values
-    const allowedStatuses = ['available', 'sold', 'under_maintenance', 'under_inspection', 'reserved'];
+    // Only allow allowed status values from enums
+    const allowedStatuses = Object.values(VEHICLE_STATUSES);
     if (queryParams.status && queryParams.status !== 'all' && allowedStatuses.includes(queryParams.status)) {
       conditions.push(`v.status = $${paramIndex}`);
       values.push(queryParams.status);

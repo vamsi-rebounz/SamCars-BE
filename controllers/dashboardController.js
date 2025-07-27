@@ -15,50 +15,49 @@ class DashboardController {
       console.log('Database client connected');
       
       try {
-        // Simple test query first
-        const testQuery = 'SELECT COUNT(*) as count FROM vehicles';
-        const testResult = await client.query(testQuery);
-
         // Get date range from query params or use defaults
         const { start_date, end_date } = req.query;
         const dateFrom = start_date || new Date(new Date().setMonth(new Date().getMonth() - 1)).toISOString().split('T')[0];
         const dateTo = end_date || new Date().toISOString().split('T')[0];
 
-        // Execute queries one by one to debug
+        // Execute queries for improved metrics
         const vehicleStats = await DashboardController.getVehicleStats(client, dateFrom, dateTo);
-        const userStats = await DashboardController.getUserStats(client, dateFrom, dateTo);
-        const paymentStats = await DashboardController.getPaymentStats(client, dateFrom, dateTo);
-        const auctionStats = await DashboardController.getAuctionStats(client, dateFrom, dateTo);
-        const appointmentStats = await DashboardController.getAppointmentStats(client, dateFrom, dateTo);
-        const recentActivity = await DashboardController.getRecentActivity(client);
-        const inventoryBreakdown = await DashboardController.getInventoryBreakdown(client);
+        const financialStats = await DashboardController.getFinancialStats(client, dateFrom, dateTo);
+        const inventoryStats = await DashboardController.getInventoryStats(client);
+        const vehicleTypeDistribution = await DashboardController.getVehicleTypeDistribution(client);
         const salesChartData = await DashboardController.getSalesChartData(client, dateFrom, dateTo);
-        const alerts = await DashboardController.getAlerts(client);
 
         const dashboardData = {
           summary: {
+            // Financial Metrics
+            total_revenue: financialStats.totalRevenue,
+            revenue_this_month: financialStats.revenueThisMonth,
+            total_profit: financialStats.totalProfit,
+            profit_this_month: financialStats.profitThisMonth,
+            profit_margin: financialStats.profitMargin,
+            
+            // Inventory Metrics
             total_vehicles: vehicleStats.totalVehicles,
             available_vehicles: vehicleStats.availableVehicles,
-            sold_vehicles: vehicleStats.soldVehicles,
-            total_users: userStats.totalUsers,
-            new_users_this_month: userStats.newUsersThisMonth,
-            total_revenue: paymentStats.totalRevenue,
-            revenue_this_month: paymentStats.revenueThisMonth,
-            total_payments: paymentStats.totalPayments,
-            pending_payments: paymentStats.pendingPayments,
-            auction_investment: auctionStats.totalInvestment,
-            auction_profit: auctionStats.totalProfit,
-            vehicles_purchased: auctionStats.vehiclesPurchased,
-            vehicles_sold: auctionStats.vehiclesSold,
-            total_appointments: appointmentStats.totalAppointments,
-            upcoming_appointments: appointmentStats.upcomingAppointments,
-            test_drives: appointmentStats.testDrives,
-            service_appointments: appointmentStats.serviceAppointments
+            total_inventory_value: inventoryStats.totalInventoryValue,
+            average_days_on_lot: inventoryStats.averageDaysOnLot,
+            
+            // Payment Metrics
+            total_payments: financialStats.totalPayments,
+            pending_payments: financialStats.pendingPayments,
+            outstanding_amount: financialStats.outstandingAmount,
+            
+            // Profit Breakdown
+            auction_profit: financialStats.auctionProfit,
+            auction_roi: financialStats.auctionROI,
+            auction_vehicles_sold: financialStats.auctionVehiclesSold,
+            individual_profit: financialStats.individualProfit,
+            individual_roi: financialStats.individualROI,
+            individual_vehicles_sold: financialStats.individualVehiclesSold,
+            auction_investment: financialStats.auctionInvestment
           },
-          inventory_breakdown: inventoryBreakdown,
+          vehicle_type_distribution: vehicleTypeDistribution,
           sales_chart: salesChartData,
-          recent_activity: recentActivity,
-          alerts: alerts,
           date_range: {
             from: dateFrom,
             to: dateTo
@@ -96,6 +95,9 @@ class DashboardController {
         COUNT(*) as total_vehicles,
         COUNT(CASE WHEN status = 'available' THEN 1 END) as available_vehicles,
         COUNT(CASE WHEN status = 'sold' THEN 1 END) as sold_vehicles,
+        COUNT(CASE WHEN status = 'reserved' THEN 1 END) as reserved_vehicles,
+        COUNT(CASE WHEN status = 'under_maintenance' THEN 1 END) as maintenance_vehicles,
+        COUNT(CASE WHEN status = 'under_inspection' THEN 1 END) as inspection_vehicles,
         COUNT(CASE WHEN created_at::date BETWEEN $1 AND $2 THEN 1 END) as new_vehicles_this_month
       FROM vehicles
     `;
@@ -107,187 +109,128 @@ class DashboardController {
       totalVehicles: parseInt(row.total_vehicles),
       availableVehicles: parseInt(row.available_vehicles),
       soldVehicles: parseInt(row.sold_vehicles),
+      reservedVehicles: parseInt(row.reserved_vehicles),
+      maintenanceVehicles: parseInt(row.maintenance_vehicles),
+      inspectionVehicles: parseInt(row.inspection_vehicles),
       newVehiclesThisMonth: parseInt(row.new_vehicles_this_month)
     };
   }
 
   /**
-   * Get user statistics
+   * Get comprehensive financial statistics
    */
-  static async getUserStats(client, dateFrom, dateTo) {
-    const query = `
-      SELECT 
-        COUNT(*) as total_users,
-        COUNT(CASE WHEN created_at::date BETWEEN $1 AND $2 THEN 1 END) as new_users_this_month,
-        COUNT(CASE WHEN role = 'customer' THEN 1 END) as total_customers,
-        COUNT(CASE WHEN role = 'admin' THEN 1 END) as total_admins
-      FROM users
-    `;
-    
-    const result = await client.query(query, [dateFrom, dateTo]);
-    const row = result.rows[0];
-    
-    return {
-      totalUsers: parseInt(row.total_users),
-      newUsersThisMonth: parseInt(row.new_users_this_month),
-      totalCustomers: parseInt(row.total_customers),
-      totalAdmins: parseInt(row.total_admins)
-    };
-  }
-
-  /**
-   * Get payment statistics
-   */
-  static async getPaymentStats(client, dateFrom, dateTo) {
-    const query = `
+  static async getFinancialStats(client, dateFrom, dateTo) {
+    // Get payment statistics
+    const paymentQuery = `
       SELECT 
         COUNT(*) as total_payments,
         COALESCE(SUM(amount), 0) as total_revenue,
         COUNT(CASE WHEN status = 'pending' THEN 1 END) as pending_payments,
+        COALESCE(SUM(CASE WHEN status = 'pending' THEN amount ELSE 0 END), 0) as outstanding_amount,
         COUNT(CASE WHEN created_at::date BETWEEN $1 AND $2 THEN 1 END) as payments_this_month,
         COALESCE(SUM(CASE WHEN created_at::date BETWEEN $1 AND $2 THEN amount ELSE 0 END), 0) as revenue_this_month
       FROM payments
+      WHERE status = 'completed'
     `;
     
-    const result = await client.query(query, [dateFrom, dateTo]);
-    const row = result.rows[0];
-    
-    return {
-      totalPayments: parseInt(row.total_payments),
-      totalRevenue: parseFloat(row.total_revenue),
-      pendingPayments: parseInt(row.pending_payments),
-      paymentsThisMonth: parseInt(row.payments_this_month),
-      revenueThisMonth: parseFloat(row.revenue_this_month)
-    };
-  }
-
-  /**
-   * Get auction statistics
-   */
-  static async getAuctionStats(client, dateFrom, dateTo) {
-    const query = `
+    // Get auction statistics
+    const auctionQuery = `
       SELECT 
-        COUNT(*) as total_purchases,
         COALESCE(SUM(total_investment), 0) as total_investment,
-        COUNT(CASE WHEN status = 'sold' THEN 1 END) as vehicles_sold,
-        COALESCE(SUM(CASE WHEN status = 'sold' THEN profit ELSE 0 END), 0) as total_profit,
-        COUNT(CASE WHEN purchase_date BETWEEN $1 AND $2 THEN 1 END) as vehicles_purchased_this_month
+        COALESCE(SUM(CASE WHEN status = 'sold' THEN profit ELSE 0 END), 0) as auction_profit,
+        COALESCE(SUM(CASE WHEN status = 'sold' THEN sold_price ELSE 0 END), 0) as auction_sales,
+        COUNT(CASE WHEN status = 'sold' THEN 1 END) as auction_vehicles_sold
       FROM auction_vehicles
     `;
     
-    const result = await client.query(query, [dateFrom, dateTo]);
+    // Get individual vehicle profit statistics
+    const individualVehicleQuery = `
+      SELECT 
+        COALESCE(SUM(CASE WHEN is_bought_in_auction = FALSE AND status = 'sold' THEN sold_price - bought_price - COALESCE(repair_costs, 0) ELSE 0 END), 0) as individual_profit,
+        COALESCE(SUM(CASE WHEN is_bought_in_auction = FALSE AND status = 'sold' THEN sold_price ELSE 0 END), 0) as individual_sales,
+        COUNT(CASE WHEN is_bought_in_auction = FALSE AND status = 'sold' THEN 1 END) as individual_vehicles_sold
+      FROM vehicles
+    `;
+    
+    const [paymentResult, auctionResult, individualResult] = await Promise.all([
+      client.query(paymentQuery, [dateFrom, dateTo]),
+      client.query(auctionQuery),
+      client.query(individualVehicleQuery)
+    ]);
+    
+    const paymentRow = paymentResult.rows[0];
+    const auctionRow = auctionResult.rows[0];
+    const individualRow = individualResult.rows[0];
+    
+    const auctionProfit = parseFloat(auctionRow.auction_profit);
+    const individualProfit = parseFloat(individualRow.individual_profit);
+    const totalProfit = auctionProfit + individualProfit;
+    
+    const totalRevenue = parseFloat(paymentRow.total_revenue) + parseFloat(auctionRow.auction_sales) + parseFloat(individualRow.individual_sales);
+    const profitMargin = totalRevenue > 0 ? (totalProfit / totalRevenue) * 100 : 0;
+    
+    const auctionROI = parseFloat(auctionRow.total_investment) > 0 ? 
+      (auctionProfit / parseFloat(auctionRow.total_investment)) * 100 : 0;
+    
+    const individualROI = parseFloat(individualRow.individual_sales) > 0 ? 
+      (individualProfit / parseFloat(individualRow.individual_sales)) * 100 : 0;
+    
+    const totalVehiclesSold = parseInt(auctionRow.auction_vehicles_sold) + parseInt(individualRow.individual_vehicles_sold);
+    
+          return {
+        totalPayments: parseInt(paymentRow.total_payments),
+        totalRevenue: totalRevenue,
+        revenueThisMonth: parseFloat(paymentRow.revenue_this_month),
+        totalProfit: totalProfit,
+        profitThisMonth: totalProfit, // Simplified for now
+        profitMargin: Math.round(profitMargin * 100) / 100,
+        pendingPayments: parseInt(paymentRow.pending_payments),
+        outstandingAmount: parseFloat(paymentRow.outstanding_amount),
+        auctionInvestment: parseFloat(auctionRow.total_investment),
+        auctionProfit: auctionProfit,
+        auctionROI: Math.round(auctionROI * 100) / 100,
+        individualProfit: individualProfit,
+        individualROI: Math.round(individualROI * 100) / 100,
+        auctionVehiclesSold: parseInt(auctionRow.auction_vehicles_sold),
+        individualVehiclesSold: parseInt(individualRow.individual_vehicles_sold)
+      };
+  }
+
+
+
+  /**
+   * Get inventory statistics
+   */
+  static async getInventoryStats(client) {
+    const query = `
+      SELECT 
+        COALESCE(SUM(price), 0) as total_inventory_value,
+        COALESCE(AVG(price), 0) as average_vehicle_price,
+        COUNT(*) as total_vehicles,
+        COALESCE(AVG(EXTRACT(EPOCH FROM (NOW() - created_at))/86400), 0) as average_days_on_lot
+      FROM vehicles
+      WHERE status = 'available'
+    `;
+    
+    const result = await client.query(query);
     const row = result.rows[0];
     
     return {
-      totalPurchases: parseInt(row.total_purchases),
-      totalInvestment: parseFloat(row.total_investment),
-      vehiclesSold: parseInt(row.vehicles_sold),
-      totalProfit: parseFloat(row.total_profit),
-      vehiclesPurchased: parseInt(row.vehicles_purchased_this_month)
+      totalInventoryValue: parseFloat(row.total_inventory_value),
+      averageVehiclePrice: parseFloat(row.average_vehicle_price),
+      totalVehicles: parseInt(row.total_vehicles),
+      averageDaysOnLot: Math.round(parseFloat(row.average_days_on_lot))
     };
   }
 
   /**
-   * Get appointment statistics
+   * Get vehicle type distribution
    */
-  static async getAppointmentStats(client, dateFrom, dateTo) {
-    // Check if tables exist first
-    const testDriveQuery = `
-      SELECT 
-        COUNT(*) as total_test_drives,
-        COUNT(CASE WHEN appointment_date >= CURRENT_DATE THEN 1 END) as upcoming_test_drives
-      FROM test_drive_appointments
-      WHERE appointment_date BETWEEN $1 AND $2
-    `;
-    
-    const serviceQuery = `
-      SELECT 
-        COUNT(*) as total_service_appointments,
-        COUNT(CASE WHEN appointment_date >= CURRENT_DATE THEN 1 END) as upcoming_service_appointments
-      FROM service_appointments
-      WHERE appointment_date BETWEEN $1 AND $2
-    `;
-    
-    try {
-      const [testDriveResult, serviceResult] = await Promise.all([
-        client.query(testDriveQuery, [dateFrom, dateTo]),
-        client.query(serviceQuery, [dateFrom, dateTo])
-      ]);
-      
-      const testDriveRow = testDriveResult.rows[0];
-      const serviceRow = serviceResult.rows[0];
-      
-      return {
-        totalAppointments: parseInt(testDriveRow.total_test_drives) + parseInt(serviceRow.total_service_appointments),
-        upcomingAppointments: parseInt(testDriveRow.upcoming_test_drives) + parseInt(serviceRow.upcoming_service_appointments),
-        testDrives: parseInt(testDriveRow.total_test_drives),
-        serviceAppointments: parseInt(serviceRow.total_service_appointments)
-      };
-    } catch (error) {
-      // If tables don't exist, return default values
-      console.log('Appointment tables not found, using default values');
-      return {
-        totalAppointments: 0,
-        upcomingAppointments: 0,
-        testDrives: 0,
-        serviceAppointments: 0
-      };
-    }
-  }
-
-  /**
-   * Get recent activity
-   */
-  static async getRecentActivity(client) {
-    const query = `
-      (SELECT 
-        'payment' as type,
-        p.payment_id as id,
-        CONCAT('Payment of $', p.amount, ' received') as description,
-        p.created_at as timestamp,
-        p.status::text
-      FROM payments p
-      ORDER BY p.created_at DESC
-      LIMIT 5)
-      UNION ALL
-      (SELECT 
-        'vehicle' as type,
-        v.vehicle_id as id,
-        CONCAT(v.year, ' ', vm.name, ' ', vmod.name, ' added to inventory') as description,
-        v.created_at as timestamp,
-        v.status::text
-      FROM vehicles v
-      JOIN vehicle_makes vm ON v.make_id = vm.make_id
-      JOIN vehicle_models vmod ON v.model_id = vmod.model_id
-      ORDER BY v.created_at DESC
-      LIMIT 5)
-      UNION ALL
-      (SELECT 
-        'auction' as type,
-        av.auction_id as id,
-        CONCAT('Auction purchase: $', av.purchase_price) as description,
-        av.created_at as timestamp,
-        av.status::text
-      FROM auction_vehicles av
-      ORDER BY av.created_at DESC
-      LIMIT 5)
-      ORDER BY timestamp DESC
-      LIMIT 10
-    `;
-    
-    const result = await client.query(query);
-    return result.rows;
-  }
-
-  /**
-   * Get inventory breakdown by category
-   */
-  static async getInventoryBreakdown(client) {
+  static async getVehicleTypeDistribution(client) {
     const query = `
       SELECT 
-        body_type as category,
-        COUNT(*) as count,
-        COALESCE(SUM(price), 0) as total_value
+        body_type,
+        COUNT(*) as count
       FROM vehicles
       WHERE body_type IS NOT NULL
       GROUP BY body_type
@@ -295,8 +238,13 @@ class DashboardController {
     `;
     
     const result = await client.query(query);
-    return result.rows;
+    return result.rows.map(row => ({
+      type: row.body_type,
+      count: parseInt(row.count)
+    }));
   }
+
+
 
   /**
    * Get sales chart data
@@ -308,48 +256,13 @@ class DashboardController {
         COUNT(*) as sales_count,
         COALESCE(SUM(amount), 0) as sales_amount
       FROM payments
-      WHERE created_at BETWEEN $1 AND $2
+      WHERE created_at BETWEEN $1 AND $2 AND status = 'completed'
       GROUP BY DATE_TRUNC('week', created_at)
       ORDER BY week
     `;
     
     const result = await client.query(query, [dateFrom, dateTo]);
     return result.rows;
-  }
-
-  /**
-   * Get active alerts
-   */
-  static async getAlerts(client) {
-    const query = `
-      SELECT 
-        alert_id,
-        type,
-        priority,
-        title,
-        message,
-        created_at
-      FROM dashboard_alerts
-      WHERE is_resolved = false
-      ORDER BY 
-        CASE priority
-          WHEN 'critical' THEN 1
-          WHEN 'high' THEN 2
-          WHEN 'medium' THEN 3
-          WHEN 'low' THEN 4
-        END,
-        created_at DESC
-      LIMIT 10
-    `;
-    
-    try {
-      const result = await client.query(query);
-      return result.rows;
-    } catch (error) {
-      // If table doesn't exist, return empty array
-      console.log('Dashboard alerts table not found, using empty array');
-      return [];
-    }
   }
 }
 
