@@ -26,18 +26,18 @@ const buildWhereClauseForInventory = (queryParams) => {
       paramIndex++;
     }
   
-    if (queryParams.category && queryParams.category !== 'all') {
-      if (['sedan', 'suv', 'truck', 'coupe', 'convertible', 'hatchback', 'minivan', 'van'].includes(queryParams.category)) {
-        conditions.push(`v.body_type = $${paramIndex}`);
-        values.push(queryParams.category);
-        paramIndex++;
-      } else if (queryParams.category === 'electric') {
-        conditions.push(`v.fuel_type = 'electric'`);
-      } else if (['luxury', 'compact'].includes(queryParams.category)) {
-          conditions.push(`EXISTS (SELECT 1 FROM VEHICLE_TAG_MAPPING vtm JOIN VEHICLE_TAGS vt ON vtm.tag_id = vt.tag_id WHERE vtm.vehicle_id = v.vehicle_id AND vt.name = $${paramIndex})`);
-          values.push(queryParams.category);
-          paramIndex++;
-      }
+    // Body type filter
+    if (queryParams.body_type && queryParams.body_type !== 'all') {
+      conditions.push(`v.body_type = $${paramIndex}`);
+      values.push(queryParams.body_type);
+      paramIndex++;
+    }
+
+    // Fuel type filter
+    if (queryParams.fuel_type && queryParams.fuel_type !== 'all') {
+      conditions.push(`v.fuel_type = $${paramIndex}`);
+      values.push(queryParams.fuel_type);
+      paramIndex++;
     }
 
     if (queryParams.auction !== null && queryParams.auction !== undefined) {

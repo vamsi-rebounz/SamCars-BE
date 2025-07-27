@@ -34,6 +34,24 @@ router.get(
     InventoryController.getInventory
 );
 
+// Get dropdown options for makes, models, and years
+router.get(
+    '/dropdown-options',
+    InventoryController.getDropdownOptions
+);
+
+// Get vehicle categories
+router.get(
+    '/categories',
+    InventoryController.getCategories
+);
+
+// Get vehicle statuses
+router.get(
+    '/statuses',
+    InventoryController.getVehicleStatuses
+);
+
 // Delete vehicle from inventory
 router.delete(
     '/vehicles/delete/:id',

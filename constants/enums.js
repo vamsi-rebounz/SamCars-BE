@@ -1,17 +1,13 @@
 // User Roles
 const USER_ROLES = {
     CUSTOMER: 'customer',
-    ADMIN: 'admin',
-    SALES: 'sales',
-    TECHNICIAN: 'technician',
-    MANAGER: 'manager'
+    ADMIN: 'admin'
 };
 
 // Appointment Statuses
 const APPOINTMENT_STATUSES = {
     PENDING: 'pending',
     CONFIRMED: 'confirmed',
-    COMPLETED: 'completed',
     CANCELLED: 'cancelled',
     RESCHEDULED: 'rescheduled'
 };
@@ -71,23 +67,35 @@ const FUEL_TYPES = {
 
 // Transmission Types
 const TRANSMISSION_TYPES = {
-    AUTOMATIC: 'automatic',
     MANUAL: 'manual',
+    AUTOMATIC: 'automatic',
     CVT: 'cvt',
-    SEMI_AUTOMATIC: 'semi_automatic'
+    AMT: 'amt',
+    DCT: 'dct',
+    DSG: 'dsg',
+    SEMI_AUTOMATIC: 'semi_automatic',
+    IVT: 'ivt',
+    HYDROSTATIC: 'hydrostatic',
+    MMT: 'mmt',
+    HYBIRD: 'hybird',
+    TORQUE_CONVERTER: 'torque_converter',
+    TIP_TRONIC: 'tip_tronic'
 };
 
 // Body Types
 const BODY_TYPES = {
+    SPORTS: 'sports',
     SEDAN: 'sedan',
+    HATCHBACK: 'hatchback',
     SUV: 'suv',
-    TRUCK: 'truck',
     COUPE: 'coupe',
     CONVERTIBLE: 'convertible',
-    HATCHBACK: 'hatchback',
-    MINIVAN: 'minivan',
     VAN: 'van',
-    WAGON: 'wagon'
+    MINIVAN: 'minivan',
+    WAGON: 'wagon',
+    PICKUP_TRUCK: 'pickup_truck',
+    CARGO_VAN: 'cargo_van',
+    BUS: 'bus'
 };
 
 module.exports = {

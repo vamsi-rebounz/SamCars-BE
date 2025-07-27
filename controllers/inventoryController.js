@@ -331,7 +331,8 @@ class InventoryController {
     static async getInventory(req, res) {
         try {
             const {
-                category = 'all',
+                body_type = 'all',
+                fuel_type = 'all',
                 limit = '10',
                 page = '1',
                 search = '',
@@ -399,7 +400,8 @@ class InventoryController {
             }
 
             const inventoryData = await InventoryModel.getInventory({
-                category,
+                body_type,
+                fuel_type,
                 limit,
                 page,
                 search,
@@ -435,6 +437,72 @@ class InventoryController {
                 message = error.message;
             }
             res.status(statusCode).json({ status: 'error', message: message });
+        }
+    }
+
+    /**
+     * Get dropdown options for makes, models, and years
+     * @param {object} req - Express request object
+     * @param {object} res - Express response object
+     */
+    static async getDropdownOptions(req, res) {
+        try {
+            const options = await InventoryModel.getDropdownOptions();
+            
+            res.status(200).json({
+                status: 'success',
+                data: options
+            });
+        } catch (error) {
+            console.error('Error fetching dropdown options:', error);
+            res.status(500).json({
+                status: 'error',
+                message: 'Failed to fetch dropdown options'
+            });
+        }
+    }
+
+    /**
+     * Get vehicle categories with counts
+     * @param {object} req - Express request object
+     * @param {object} res - Express response object
+     */
+    static async getCategories(req, res) {
+        try {
+            const categories = await InventoryModel.getCategories();
+            
+            res.status(200).json({
+                status: 'success',
+                data: categories
+            });
+        } catch (error) {
+            console.error('Error fetching categories:', error);
+            res.status(500).json({
+                status: 'error',
+                message: 'Failed to fetch categories'
+            });
+        }
+    }
+
+    /**
+     * Get vehicle statuses with counts
+     * @param {object} req - Express request object
+     * @param {object} res - Express response object
+     */
+    static async getVehicleStatuses(req, res) {
+        try {
+            const statuses = await InventoryModel.getVehicleStatuses();
+            
+            res.status(200).json({
+                status: 'success',
+                data: statuses
+            });
+        } catch (error) {
+            console.error('Error fetching vehicle statuses:', error);
+            res.status(500).json({
+                status: 'error',
+                message: 'Failed to fetch vehicle statuses'
+            });
         }
     }
 

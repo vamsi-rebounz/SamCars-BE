@@ -637,7 +637,7 @@ class InventoryModel {
      * @param {Function} buildWhereClauseForInventory - Helper function to build WHERE clause.
      * @returns {Promise<object>} Inventory data, pagination info, and filter statistics.
      */
-    static async getInventory({ category, limit, page, search, sortBy, sortOrder, status, auction, min_price, max_price, min_purchase_cost, max_purchase_cost, min_additional_costs, max_additional_costs, min_sold_price, max_sold_price, min_profit, max_profit, isAdmin }, buildWhereClauseForInventory) {
+    static async getInventory({ body_type, fuel_type, limit, page, search, sortBy, sortOrder, status, auction, min_price, max_price, min_purchase_cost, max_purchase_cost, min_additional_costs, max_additional_costs, min_sold_price, max_sold_price, min_profit, max_profit, isAdmin }, buildWhereClauseForInventory) {
         const parsedLimit = parseInt(limit);
         const parsedPage = parseInt(page);
         const offset = (parsedPage - 1) * parsedLimit;
@@ -665,7 +665,8 @@ class InventoryModel {
         const { whereClause, values, paramIndex } = buildWhereClauseForInventory({ 
             search, 
             status, 
-            category, 
+            body_type, 
+            fuel_type,
             auction,
             min_price,
             max_price,
@@ -852,7 +853,122 @@ class InventoryModel {
             client.release();
         }
     }
-    
+
+    /**
+     * Get dropdown options for makes, models, and years
+     * @returns {Promise<object>} Object containing makes, models, and years arrays
+     */
+    static async getDropdownOptions() {
+        try {
+            const makesQuery = `
+                SELECT DISTINCT vm.name as make
+                FROM VEHICLES v
+                JOIN VEHICLE_MAKES vm ON v.make_id = vm.make_id
+                WHERE v.status = 'available'
+                ORDER BY vm.name ASC
+            `;
+            const makesResult = await pool.query(makesQuery);
+            
+            const modelsQuery = `
+                SELECT DISTINCT vmod.name as model
+                FROM VEHICLES v
+                JOIN VEHICLE_MODELS vmod ON v.model_id = vmod.model_id
+                WHERE v.status = 'available'
+                ORDER BY vmod.name ASC
+            `;
+            const modelsResult = await pool.query(modelsQuery);
+            
+            const yearsQuery = `
+                SELECT DISTINCT year
+                FROM VEHICLES
+                WHERE status = 'available'
+                ORDER BY year DESC
+            `;
+            const yearsResult = await pool.query(yearsQuery);
+            
+            return {
+                makes: makesResult.rows.map(row => row.make),
+                models: modelsResult.rows.map(row => row.model),
+                years: yearsResult.rows.map(row => row.year.toString())
+            };
+        } catch (error) {
+            console.error('Error in getDropdownOptions:', error);
+            throw error;
+        }
+    }
+
+    /**
+     * Get vehicle categories with counts
+     * @returns {Promise<object>} Object containing body types and fuel types with counts
+     */
+    static async getCategories() {
+        try {
+            const bodyTypesQuery = `
+                SELECT 
+                    body_type as category,
+                    COUNT(*) as count
+                FROM VEHICLES
+                WHERE status = 'available' AND body_type IS NOT NULL
+                GROUP BY body_type
+                ORDER BY body_type ASC
+            `;
+            const bodyTypesResult = await pool.query(bodyTypesQuery);
+            
+            const fuelTypesQuery = `
+                SELECT 
+                    fuel_type as category,
+                    COUNT(*) as count
+                FROM VEHICLES
+                WHERE status = 'available' AND fuel_type IS NOT NULL
+                GROUP BY fuel_type
+                ORDER BY fuel_type ASC
+            `;
+            const fuelTypesResult = await pool.query(fuelTypesQuery);
+            
+            // Return separate body types and fuel types
+            return {
+                bodyTypes: bodyTypesResult.rows.reduce((acc, row) => {
+                    acc[row.category] = parseInt(row.count);
+                    return acc;
+                }, {}),
+                fuelTypes: fuelTypesResult.rows.reduce((acc, row) => {
+                    acc[row.category] = parseInt(row.count);
+                    return acc;
+                }, {})
+            };
+        } catch (error) {
+            console.error('Error in getCategories:', error);
+            throw error;
+        }
+    }
+
+    /**
+     * Get vehicle statuses with counts
+     * @returns {Promise<object>} Object containing statuses with counts
+     */
+    static async getVehicleStatuses() {
+        try {
+            const statusesQuery = `
+                SELECT 
+                    status,
+                    COUNT(*) as count
+                FROM VEHICLES
+                GROUP BY status
+                ORDER BY status ASC
+            `;
+            const statusesResult = await pool.query(statusesQuery);
+            
+            const statuses = {};
+            statusesResult.rows.forEach(row => {
+                statuses[row.status] = parseInt(row.count);
+            });
+            
+            return statuses;
+        } catch (error) {
+            console.error('Error in getVehicleStatuses:', error);
+            throw error;
+        }
+    }
 
     /**
      * Deletes a vehicle and all its associated data from the database
