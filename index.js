@@ -21,8 +21,10 @@ const isProduction = process.env.NODE_ENV === 'production';
 let allowedOrigins = [];
 if (isProduction) {
   allowedOrigins = [
+    // "http://localhost:5173",
     "https://www.saamcars.com",
-    "https://saam-cars-7k2w7fhhq-saam-cars-llc.vercel.app", // add your vercel frontend URL here
+    "https://saam-cars-h4x2sp08a-saam-cars-llc.vercel.app", // Production Deployment URL
+    "https://saam-cars-fe-git-productionv1-saam-cars-llc.vercel.app" // Production Deployment URL
   ];
 } else {
   allowedOrigins = [
