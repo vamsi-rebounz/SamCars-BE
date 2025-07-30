@@ -23,8 +23,7 @@ if (isProduction) {
   allowedOrigins = [
     // "http://localhost:5173",
     "https://www.saamcars.com",
-    "https://saam-cars-h4x2sp08a-saam-cars-llc.vercel.app", // Production Deployment URL
-    "https://saam-cars-fe-git-productionv1-saam-cars-llc.vercel.app" // Production Deployment URL
+    "https://saam-cars-fe.vercel.app/", // Production Deployment URL
   ];
 } else {
   allowedOrigins = [
