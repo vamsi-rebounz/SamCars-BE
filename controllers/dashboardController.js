@@ -166,14 +166,29 @@ class DashboardController {
     const individualProfit = parseFloat(individualRow.individual_profit);
     const totalProfit = auctionProfit + individualProfit;
     
-    const totalRevenue = parseFloat(paymentRow.total_revenue) + parseFloat(auctionRow.auction_sales) + parseFloat(individualRow.individual_sales);
+    // FIXED: Remove double counting - only use payments table for revenue
+    // Vehicle sales are already recorded in the payments table
+    const totalRevenue = parseFloat(paymentRow.total_revenue);
     const profitMargin = totalRevenue > 0 ? (totalProfit / totalRevenue) * 100 : 0;
     
     const auctionROI = parseFloat(auctionRow.total_investment) > 0 ? 
       (auctionProfit / parseFloat(auctionRow.total_investment)) * 100 : 0;
     
-    const individualROI = parseFloat(individualRow.individual_sales) > 0 ? 
-      (individualProfit / parseFloat(individualRow.individual_sales)) * 100 : 0;
+    // FIXED: Use payments table for individual sales to avoid double counting
+    // Calculate individual sales from payments table for vehicles not bought in auction
+    const individualSalesQuery = `
+      SELECT COALESCE(SUM(amount), 0) as individual_sales_from_payments
+      FROM payments p
+      JOIN vehicles v ON p.vehicle_id = v.vehicle_id
+      WHERE p.status = 'completed' 
+        AND v.is_bought_in_auction = FALSE
+        AND v.status = 'sold'
+    `;
+    const individualSalesResult = await client.query(individualSalesQuery);
+    const individualSalesFromPayments = parseFloat(individualSalesResult.rows[0].individual_sales_from_payments);
+    
+    const individualROI = individualSalesFromPayments > 0 ? 
+      (individualProfit / individualSalesFromPayments) * 100 : 0;
     
     const totalVehiclesSold = parseInt(auctionRow.auction_vehicles_sold) + parseInt(individualRow.individual_vehicles_sold);
     

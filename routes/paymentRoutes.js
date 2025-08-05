@@ -21,4 +21,11 @@ router.get('/test', (req, res) => {
   res.json({ message: 'Payment routes working' });
 });
 
+// Webhook test route
+router.post('/webhook-test', (req, res) => {
+  console.log('🧪 Webhook test endpoint hit');
+  console.log('📋 Request body:', req.body);
+  res.json({ message: 'Webhook test successful', body: req.body });
+});
+
 module.exports = router;

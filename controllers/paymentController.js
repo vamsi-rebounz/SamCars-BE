@@ -7,13 +7,13 @@ const crypto = require('crypto');
 const bcrypt = require('bcryptjs');
 
 class PaymentController {
-  // Create checkout session (same as before)
+  // Create checkout session for vehicle purchase or hold
   async createCheckoutSession(req, res) {
-    const { vehicle_id, user_id } = req.body;
-    console.log('Creating checkout session with:', { vehicle_id, user_id });
+    const { vehicle_id, user_id, type = 'purchase', amount } = req.body;
+    console.log('Creating checkout session with:', { vehicle_id, user_id, type, amount });
     
-    if (!vehicle_id) {
-      return res.status(400).json({ error: 'Missing required fields' });
+    if (!vehicle_id || !user_id) {
+      return res.status(400).json({ error: 'Missing required fields: vehicle_id and user_id' });
     }
 
     const vehicle = await VehicleModel.getVehicleById(vehicle_id);
@@ -21,33 +21,91 @@ class PaymentController {
       return res.status(404).json({ error: 'Vehicle not found' });
     }
 
+    // Check if vehicle is available
+    if (vehicle.status !== 'available') {
+      return res.status(400).json({ error: 'Vehicle is not available for purchase' });
+    }
+
     try {
+      let paymentAmount, description, productName;
+      
+      if (type === 'purchase') {
+        // Check if user has already paid a deposit
+        const client = await pool.connect();
+        try {
+          const depositQuery = `
+            SELECT amount FROM payments 
+            WHERE vehicle_id = $1 AND user_id = $2 AND type = 'hold' AND status = 'completed'
+            ORDER BY created_at DESC LIMIT 1
+          `;
+          const depositResult = await client.query(depositQuery, [vehicle_id, user_id]);
+          
+          if (depositResult.rows.length > 0) {
+            // User has paid a deposit, calculate remaining amount
+            const depositAmount = parseFloat(depositResult.rows[0].amount);
+            const remainingAmount = vehicle.price - depositAmount;
+            paymentAmount = Math.round(remainingAmount * 100); // Convert to cents
+            productName = `Complete Purchase: ${vehicle.make} ${vehicle.model} ${vehicle.year}`;
+            description = `Remaining payment for vehicle purchase (Stock #${vehicle.stock_number}) - Deposit of $${depositAmount.toLocaleString()} already paid`;
+          } else {
+            // Full vehicle purchase
+            paymentAmount = Math.round(vehicle.price * 100); // Convert to cents
+            productName = `Purchase: ${vehicle.make} ${vehicle.model} ${vehicle.year}`;
+            description = `Full payment for vehicle purchase (Stock #${vehicle.stock_number})`;
+          }
+        } finally {
+          client.release();
+        }
+      } else if (type === 'hold') {
+        // Vehicle hold with deposit
+        const depositAmount = amount || Math.round(vehicle.price * 0.05); // 5% deposit or custom amount
+        paymentAmount = Math.round(depositAmount * 100); // Convert to cents
+        productName = `Hold: ${vehicle.make} ${vehicle.model} ${vehicle.year}`;
+        description = `Deposit to hold vehicle (Stock #${vehicle.stock_number}) - Refundable within 24 hours`;
+      } else {
+        return res.status(400).json({ error: 'Invalid payment type. Must be "purchase" or "hold"' });
+      }
+
       const session = await stripe.checkout.sessions.create({
         payment_method_types: ['card'],
         metadata: {
           vehicle_id: vehicle_id.toString(),
-          user_id: user_id ? user_id.toString() : null
+          user_id: user_id.toString(),
+          payment_type: type,
+          vehicle_price: vehicle.price.toString(),
+          stock_number: vehicle.stock_number || ''
         },
         line_items: [{
           price_data: {
             currency: 'usd',
             product_data: {
-              name: `Hold Payment for ${vehicle.make} ${vehicle.model} ${vehicle.year}`,
-              description: `5% holding deposit for vehicle (Stock #${vehicle.stock_number})`,
+              name: productName,
+              description: description,
             },
-            unit_amount: Math.round(vehicle.price * 0.05 * 100), // Convert to cents
+            unit_amount: paymentAmount,
           },
           quantity: 1,
         }],
         mode: 'payment',
-        success_url: `${process.env.FRONTEND_URL}/payment-success?session_id={CHECKOUT_SESSION_ID}`,
+        success_url: `${process.env.FRONTEND_URL}/payment-success?session_id={CHECKOUT_SESSION_ID}&vehicle_id=${vehicle_id}`,
         cancel_url: `${process.env.FRONTEND_URL}/payment-cancelled`,
       });
+      
       console.log('Created checkout session:', { 
         id: session.id, 
+        type,
+        amount: paymentAmount,
+        vehicle_id: vehicle_id,
+        user_id: user_id,
         metadata: session.metadata 
       });
-      res.json({ url: session.url });
+      
+      res.json({ 
+        url: session.url,
+        sessionId: session.id,
+        type,
+        amount: paymentAmount / 100 // Return in dollars
+      });
     } catch (error) {
       console.error('Error creating checkout session:', error);
       res.status(500).json({ error: 'Failed to create checkout session' });
@@ -56,13 +114,14 @@ class PaymentController {
 
   // Stripe webhook handler to save payment on success
   async handleStripeWebhook(req, res) {
-    console.log('=== WEBHOOK RECEIVED ===');
-    console.log('Method:', req.method);
-    console.log('Path:', req.path);
-    console.log('Headers:', JSON.stringify(req.headers, null, 2));
-    console.log('Body length:', req.body ? req.body.length : 0);
-    console.log('Body preview:', req.body ? req.body.toString().substring(0, 200) + '...' : 'No body');
-    console.log('========================');
+    console.log('🚨 === WEBHOOK RECEIVED ===');
+    console.log('📅 Timestamp:', new Date().toISOString());
+    console.log('🔗 Method:', req.method);
+    console.log('📍 Path:', req.path);
+    console.log('📋 Headers:', JSON.stringify(req.headers, null, 2));
+    console.log('📏 Body length:', req.body ? req.body.length : 0);
+    console.log('📄 Body preview:', req.body ? req.body.toString().substring(0, 200) + '...' : 'No body');
+    console.log('🚨 ========================');
 
     const sig = req.headers['stripe-signature'];
     let event;
@@ -75,11 +134,13 @@ class PaymentController {
       return res.status(400).send(`Webhook Error: ${err.message}`);
     }
 
-    // Handle the checkout.session.completed event
+    // Handle payment-related events
+    console.log('🎯 Processing event type:', event.type);
+    
     if (event.type === 'checkout.session.completed') {
-      console.log('Received checkout.session.completed event:', event.type);
+      console.log('✅ Received checkout.session.completed event');
       const session = event.data.object;
-      console.log('Session data:', session);
+      console.log('📋 Session data:', JSON.stringify(session, null, 2));
 
       // Retrieve payment details
       const paymentIntentId = session.payment_intent;
@@ -87,13 +148,19 @@ class PaymentController {
       const amountTotal = session.amount_total / 100; // Convert cents to dollars
       const currency = session.currency.toUpperCase();
       const metadata = session.metadata || {};
-      console.log('Session metadata:', metadata);
+      console.log('🔍 Session metadata:', JSON.stringify(metadata, null, 2));
       
       // Fix: Get vehicle_id from metadata correctly
       const vehicleId = metadata.vehicle_id ? parseInt(metadata.vehicle_id) : null;
       const userId = metadata.user_id ? parseInt(metadata.user_id) : null;
+      const paymentType = metadata.payment_type || 'purchase'; // Default to purchase
       
-      console.log('Parsed IDs:', { vehicleId, userId });
+      console.log('🔢 Parsed IDs:', { vehicleId, userId, paymentType });
+      console.log('🔢 Raw metadata values:', { 
+        vehicle_id: metadata.vehicle_id, 
+        user_id: metadata.user_id, 
+        payment_type: metadata.payment_type 
+      });
 
       // Skip processing if no user_id (test events or invalid data)
       if (!userId) {
@@ -109,7 +176,7 @@ class PaymentController {
 
         // Retrieve PaymentIntent for more details
         const paymentIntent = await stripe.paymentIntents.retrieve(paymentIntentId);
-        console.log('Payment Intent:', paymentIntent);
+        console.log('📋 Payment Intent:', JSON.stringify(paymentIntent, null, 2));
 
         // Begin transaction
         await client.query('BEGIN');
@@ -120,55 +187,84 @@ class PaymentController {
           INSERT INTO payments (
             user_id, amount, currency, description, payment_method,
             transaction_id, status, receipt_url, vehicle_id,
-            created_at, updated_at
-          ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,NOW(),NOW())
+            created_at, updated_at, type
+          ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,NOW(),NOW(),$10)
           RETURNING payment_id
         `;
         const values = [
           userId,
           amountTotal,
           currency,
-          paymentIntent.description || `Hold payment for vehicle ${vehicleId}`,
-          paymentIntent.payment_method_types[0],
+          paymentIntent.description || `Payment for vehicle ${vehicleId}`,
+          (paymentIntent.payment_method_types && paymentIntent.payment_method_types[0]) || 'card',
           paymentIntent.id,
-          paymentIntent.status,
-          paymentIntent.charges.data[0]?.receipt_url || null,
-          vehicleId
+          // Map Stripe status to our database enum
+          paymentIntent.status === 'succeeded' ? 'completed' : 
+          paymentIntent.status === 'requires_payment_method' ? 'pending' :
+          paymentIntent.status === 'canceled' ? 'failed' : 'pending',
+          (paymentIntent.charges && paymentIntent.charges.data && paymentIntent.charges.data[0]?.receipt_url) || null,
+          vehicleId,
+          paymentType
         ];
 
         const result = await client.query(query, values);
         console.log('Payment saved with ID:', result.rows[0].payment_id);
 
-        // Update vehicle status to reserved
+        // Update vehicle status based on payment type
         if (vehicleId) {
-          console.log('Attempting to update vehicle status for ID:', vehicleId);
+          console.log('🚗 === VEHICLE STATUS UPDATE START ===');
+          console.log('🎯 Attempting to update vehicle status for ID:', vehicleId);
           
-          // First check if vehicle exists
-          const checkVehicleQuery = 'SELECT vehicle_id, status FROM VEHICLES WHERE vehicle_id = $1';
+          // First check if vehicle exists and get current status
+          const checkVehicleQuery = 'SELECT vehicle_id, status, stock_number FROM VEHICLES WHERE vehicle_id = $1';
+          console.log('🔍 Executing vehicle check query:', checkVehicleQuery, 'with vehicleId:', vehicleId);
           const vehicleCheck = await client.query(checkVehicleQuery, [vehicleId]);
-          console.log('Vehicle check result:', vehicleCheck.rows[0]);
+          console.log('📋 Vehicle check result:', vehicleCheck.rows[0]);
+          console.log('📊 Total rows returned:', vehicleCheck.rows.length);
 
           if (vehicleCheck.rows.length === 0) {
             throw new Error(`Vehicle not found with ID: ${vehicleId}`);
           }
 
-          const updateVehicleQuery = `
-            UPDATE VEHICLES 
-            SET status = 'reserved', updated_at = NOW() 
-            WHERE vehicle_id = $1
-            RETURNING vehicle_id, status
-          `;
-          const vehicleResult = await client.query(updateVehicleQuery, [vehicleId]);
-          console.log('Vehicle update result:', vehicleResult.rows[0]);
+          const currentStatus = vehicleCheck.rows[0].status;
+          const stockNumber = vehicleCheck.rows[0].stock_number;
           
-          if (vehicleResult.rows.length === 0) {
-            throw new Error(`Failed to update vehicle status for ID: ${vehicleId}`);
+          console.log('📊 Current vehicle status:', currentStatus);
+          console.log('🏷️ Stock number:', stockNumber);
+          console.log('💳 Payment type:', paymentType);
+          
+          // Only update if vehicle is currently available
+          if (currentStatus !== 'available') {
+            console.log(`⚠️ Vehicle ${vehicleId} (Stock #${stockNumber}) is not available (current status: ${currentStatus}). Skipping status update.`);
           } else {
-            console.log('Vehicle status successfully updated to reserved for ID:', vehicleId);
+            // Determine new status based on payment type
+            const newStatus = paymentType === 'purchase' ? 'sold' : 'reserved';
+            console.log('🔄 Target status:', newStatus);
+            
+            const updateVehicleQuery = `
+              UPDATE VEHICLES 
+              SET status = $1, updated_at = NOW() 
+              WHERE vehicle_id = $2 AND status = 'available'
+              RETURNING vehicle_id, status, stock_number
+            `;
+            console.log('🔧 Executing update query:', updateVehicleQuery);
+            console.log('📝 Query parameters:', [newStatus, vehicleId]);
+            
+            const vehicleResult = await client.query(updateVehicleQuery, [newStatus, vehicleId]);
+            console.log('📋 Vehicle update result:', vehicleResult.rows[0]);
+            console.log('📊 Update rows affected:', vehicleResult.rows.length);
+            
+            if (vehicleResult.rows.length === 0) {
+              console.log(`❌ Failed to update vehicle status for ID: ${vehicleId} - vehicle may no longer be available`);
+            } else {
+              console.log(`✅ Vehicle ${vehicleId} (Stock #${stockNumber}) status successfully updated to ${newStatus}`);
+            }
           }
-        } else {
-          console.log('No vehicle ID provided in metadata');
-        }
+                  } else {
+            console.log('❌ No vehicle ID provided in metadata');
+          }
+          
+          console.log('🚗 === VEHICLE STATUS UPDATE END ===');
 
         // Commit transaction
         await client.query('COMMIT');
@@ -188,6 +284,114 @@ class PaymentController {
           client.release();
           console.log('Database client released');
         }
+      }
+    }
+
+    // Handle payment_intent.succeeded as backup
+    if (event.type === 'payment_intent.succeeded') {
+      console.log('✅ Received payment_intent.succeeded event as backup');
+      const paymentIntent = event.data.object;
+      console.log('📋 Payment Intent data:', JSON.stringify(paymentIntent, null, 2));
+      
+      // Try to get metadata from payment intent
+      const metadata = paymentIntent.metadata || {};
+      console.log('🔍 Payment Intent metadata:', JSON.stringify(metadata, null, 2));
+      
+      const vehicleId = metadata.vehicle_id ? parseInt(metadata.vehicle_id) : null;
+      const userId = metadata.user_id ? parseInt(metadata.user_id) : null;
+      const paymentType = metadata.payment_type || 'purchase';
+      
+      console.log('🔢 Parsed IDs from payment intent:', { vehicleId, userId, paymentType });
+      
+      if (vehicleId && userId) {
+        console.log('🔄 Processing payment_intent.succeeded for vehicle status update');
+        // Note: This would need the same processing logic as above
+      }
+    }
+
+    // Handle charge.refunded event (full or partial refund)
+    if (event.type === 'charge.refunded') {
+      console.log('🔄 Received charge.refunded event');
+      const charge = event.data.object;
+      console.log('📋 Charge data:', JSON.stringify(charge, null, 2));
+      
+      try {
+        const client = await pool.connect();
+        
+        // Find the payment record by transaction_id (payment_intent_id)
+        const paymentQuery = `
+          UPDATE payments 
+          SET status = 'refunded', updated_at = NOW()
+          WHERE transaction_id = $1 AND status = 'completed'
+          RETURNING payment_id, vehicle_id, type, amount
+        `;
+        
+        const result = await client.query(paymentQuery, [charge.payment_intent]);
+        
+        if (result.rows.length > 0) {
+          const payment = result.rows[0];
+          console.log(`✅ Payment ${payment.payment_id} marked as refunded`);
+          
+          // If this was a hold payment (deposit), update vehicle status back to available
+          if (payment.type === 'hold' && payment.vehicle_id) {
+            const vehicleUpdateQuery = `
+              UPDATE vehicles 
+              SET status = 'available', updated_at = NOW()
+              WHERE vehicle_id = $1 AND status = 'reserved'
+            `;
+            await client.query(vehicleUpdateQuery, [payment.vehicle_id]);
+            console.log(`✅ Vehicle ${payment.vehicle_id} status updated back to available after refund`);
+          }
+        } else {
+          console.log(`⚠️ No completed payment found for transaction_id: ${charge.payment_intent}`);
+        }
+        
+        client.release();
+      } catch (error) {
+        console.error('❌ Error processing refund:', error);
+      }
+    }
+
+    // Handle payment_intent.canceled event
+    if (event.type === 'payment_intent.canceled') {
+      console.log('❌ Received payment_intent.canceled event');
+      const paymentIntent = event.data.object;
+      console.log('📋 Payment Intent data:', JSON.stringify(paymentIntent, null, 2));
+      
+      try {
+        const client = await pool.connect();
+        
+        // Find the payment record by transaction_id
+        const paymentQuery = `
+          UPDATE payments 
+          SET status = 'failed', updated_at = NOW()
+          WHERE transaction_id = $1 AND status IN ('pending', 'completed')
+          RETURNING payment_id, vehicle_id, type, amount
+        `;
+        
+        const result = await client.query(paymentQuery, [paymentIntent.id]);
+        
+        if (result.rows.length > 0) {
+          const payment = result.rows[0];
+          console.log(`✅ Payment ${payment.payment_id} marked as failed`);
+          
+          // If this was a hold payment (deposit), update vehicle status back to available
+          if (payment.type === 'hold' && payment.vehicle_id) {
+            const vehicleUpdateQuery = `
+              UPDATE vehicles 
+              SET status = 'available', updated_at = NOW()
+              WHERE vehicle_id = $1 AND status = 'reserved'
+            `;
+            await client.query(vehicleUpdateQuery, [payment.vehicle_id]);
+            console.log(`✅ Vehicle ${payment.vehicle_id} status updated back to available after cancellation`);
+          }
+        } else {
+          console.log(`⚠️ No payment found for transaction_id: ${paymentIntent.id}`);
+        }
+        
+        client.release();
+      } catch (error) {
+        console.error('❌ Error processing payment cancellation:', error);
       }
     }
 
@@ -232,16 +436,12 @@ class PaymentController {
       }
 
       if (type && type !== 'all') {
-        if (type === 'vehicle hold') {
-          whereConditions.push(`p.type = $${queryParams.length + 1}`);
-          queryParams.push('vehicle_hold');
-        } else if (type === 'vehicle purchase') {
-          whereConditions.push(`p.type = $${queryParams.length + 1}`);
-          queryParams.push('vehicle_purchase');
-        } else if (type === 'service') {
-          whereConditions.push(`p.type = $${queryParams.length + 1}`);
-          queryParams.push('service');
+        if (type === 'cash') {
+          // Cash payments are manual payments (is_manual = true)
+          whereConditions.push(`p.is_manual = $${queryParams.length + 1}`);
+          queryParams.push(true);
         } else if (type === 'stripe') {
+          // Stripe payments have transaction_id starting with 'pi_'
           whereConditions.push(`p.transaction_id LIKE $${queryParams.length + 1}`);
           queryParams.push('pi_%');
         }
